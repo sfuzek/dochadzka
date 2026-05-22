@@ -1,0 +1,66 @@
+{% extends 'layout.html' %}
+{% block title %}Správca — Dochádzka{% endblock %}
+{% block page_title %}Správa zamestnancov{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-title">👥 Všetci zamestnanci ({{ users|length }})</div>
+  {% if users %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Meno</th>
+          <th>E-mail</th>
+          <th>Rola</th>
+          <th>Registrovaný</th>
+          <th>Klienti</th>
+          <th>Záznamy</th>
+          <th>Akcie</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td><strong>{{ u.meno }}</strong></td>
+          <td class="text-muted text-sm">{{ u.email }}</td>
+          <td>
+            {% if u.is_admin %}
+              <span class="badge badge-orange">Správca</span>
+            {% else %}
+              <span class="badge badge-gray">Zamestnanec</span>
+            {% endif %}
+          </td>
+          <td class="text-muted text-sm">{{ u.created_at.strftime('%d.%m.%Y') }}</td>
+          <td class="td-center">{{ u.klienti|length }}</td>
+          <td class="td-center">{{ u.zaznamy|length }}</td>
+          <td>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <a href="{{ url_for('admin_vykaz', user_id=u.id) }}" class="btn btn-primary btn-xs">
+                📊 Výkaz
+              </a>
+              <a href="{{ url_for('admin_export', user_id=u.id) }}" class="btn btn-success btn-xs">
+                ⬇ Excel
+              </a>
+              {% if u.id != current_user.id %}
+              <form method="POST" action="{{ url_for('toggle_admin', user_id=u.id) }}" style="display:inline">
+                <button type="submit" class="btn btn-outline btn-xs">
+                  {% if u.is_admin %}↓ Zam.{% else %}↑ Admin{% endif %}
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="icon">👥</div>
+    <p>Žiadni zamestnanci.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

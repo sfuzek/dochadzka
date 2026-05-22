@@ -1,0 +1,81 @@
+{% extends 'layout.html' %}
+{% block title %}Klienti — Dochádzka{% endblock %}
+{% block page_title %}Moji klienti{% endblock %}
+
+{% block content %}
+<div class="grid-2">
+  <!-- Pridanie klienta -->
+  <div class="card mb-0">
+    <div class="card-title">➕ Pridať klienta</div>
+    <form method="POST" action="{{ url_for('pridat_klienta') }}">
+      <div class="form-group">
+        <label>Názov klienta / projektu</label>
+        <input type="text" name="nazov" placeholder="napr. ABC s.r.o." required autofocus>
+      </div>
+      <button type="submit" class="btn btn-primary">Pridať klienta</button>
+    </form>
+  </div>
+
+  <!-- Štatistiky -->
+  <div class="card mb-0">
+    <div class="card-title">📊 Prehľad</div>
+    <div style="display:flex;gap:20px">
+      <div>
+        <div class="stat-value" style="font-size:32px">{{ klienti|selectattr('aktivny')|list|length }}</div>
+        <div class="stat-label">Aktívni klienti</div>
+      </div>
+      <div>
+        <div class="stat-value" style="font-size:32px;color:var(--muted)">{{ klienti|rejectattr('aktivny')|list|length }}</div>
+        <div class="stat-label">Archivovaní</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mt-16" style="margin-top:20px">
+  <div class="card-title">Zoznam klientov</div>
+  {% if klienti %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Názov klienta</th>
+          <th>Pridaný</th>
+          <th>Záznamy</th>
+          <th>Stav</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for k in klienti %}
+        <tr>
+          <td><strong>{{ k.nazov }}</strong></td>
+          <td class="text-muted text-sm">{{ k.created_at.strftime('%d.%m.%Y') }}</td>
+          <td class="td-center">{{ k.zaznamy|length }}</td>
+          <td>
+            {% if k.aktivny %}
+              <span class="badge badge-green">Aktívny</span>
+            {% else %}
+              <span class="badge badge-gray">Archivovaný</span>
+            {% endif %}
+          </td>
+          <td class="td-right">
+            <form method="POST" action="{{ url_for('archivovat_klienta', klient_id=k.id) }}" style="display:inline">
+              <button type="submit" class="btn btn-outline btn-xs">
+                {% if k.aktivny %}Archivovať{% else %}Aktivovať{% endif %}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="icon">👥</div>
+    <p>Zatiaľ žiadni klienti. Pridajte prvého!</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}Registrácia — Dochádzka{% endblock %}
+{% block body %}
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div style="font-size:40px;margin-bottom:8px">⏱</div>
+      <h1>Nový účet</h1>
+      <p>Vytvorte si účet v systéme dochádzky</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+        <div class="flash {{ cat }}" style="margin-bottom:16px">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <form method="POST">
+      <div class="form-group">
+        <label>Meno a priezvisko</label>
+        <input type="text" name="meno" placeholder="Jana Nováková" required autofocus>
+      </div>
+      <div class="form-group">
+        <label>E-mail</label>
+        <input type="email" name="email" placeholder="jana@firma.sk" required>
+      </div>
+      <div class="form-group">
+        <label>Heslo</label>
+        <input type="password" name="heslo" placeholder="Min. 6 znakov" required>
+      </div>
+      <div class="form-group">
+        <label>Heslo znovu</label>
+        <input type="password" name="heslo2" placeholder="Zopakujte heslo" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full btn-lg" style="margin-top:8px">
+        Zaregistrovať sa
+      </button>
+    </form>
+
+    <div class="auth-footer">
+      Máte účet? <a href="{{ url_for('login') }}">Prihláste sa</a>
+    </div>
+    <p class="text-sm text-muted" style="text-align:center;margin-top:12px">
+      💡 Prvý zaregistrovaný používateľ sa stane správcom.
+    </p>
+  </div>
+</div>
+{% endblock %}

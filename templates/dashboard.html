@@ -1,0 +1,142 @@
+{% extends 'layout.html' %}
+{% block title %}Dashboard — Dochádzka{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+
+{% if aktivny %}
+<!-- ACTIVE TIMER -->
+<div class="timer-card">
+  <div class="label">⏱ Aktívny časovač</div>
+  <div class="timer-display" id="timerDisplay">00:00:00</div>
+  <div class="timer-client">📁 {{ aktivny.klient.nazov }}</div>
+  <div style="font-size:12px;opacity:.6;margin-top:4px">
+    Začiatok: {{ aktivny.cas_start.strftime('%H:%M') }} dňa {{ aktivny.cas_start.strftime('%d.%m.%Y') }}
+  </div>
+
+  <!-- Pridanie činnosti -->
+  <form method="POST" action="{{ url_for('pridat_cinnost') }}" style="margin-top:18px">
+    <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <input type="text" name="popis" placeholder="Popíšte činnosť (napr. analýza, fakturácia...)"
+             style="flex:1;min-width:200px;background:rgba(255,255,255,0.15);border-color:rgba(255,255,255,0.3);color:#fff;">
+      <button type="submit" class="btn" style="background:rgba(255,255,255,0.2);color:#fff;border:1.5px solid rgba(255,255,255,0.4)">
+        ✂ Rozdeliť / Pridať činnosť
+      </button>
+    </div>
+  </form>
+
+  <!-- Zastavenie -->
+  <form method="POST" action="{{ url_for('stop_cas') }}" class="timer-actions" id="stopForm">
+    <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
+    <div style="display:flex;gap:10px;flex:1;flex-wrap:wrap">
+      <input type="text" name="poznamka" placeholder="Záverečná poznámka (voliteľné)"
+             style="flex:1;min-width:180px;background:rgba(255,255,255,0.15);border-color:rgba(255,255,255,0.3);color:#fff;">
+      <button type="submit" class="btn btn-danger btn-lg">⏹ Zastaviť prácu</button>
+    </div>
+  </form>
+</div>
+
+<!-- Priebežné činnosti -->
+{% if aktivny.cinnosti %}
+<div class="card mb-0">
+  <div class="card-title">Zaznamenané činnosti</div>
+  <div class="cinnosti-list">
+    {% for c in aktivny.cinnosti %}
+    <div class="cinnost-item">
+      <span style="font-size:14px">📌</span>
+      <span class="cinnost-popis">{{ c.popis }}</span>
+      <span class="cinnost-time">
+        {{ c.cas_od.strftime('%H:%M') }} –
+        {% if c.cas_do %}{{ c.cas_do.strftime('%H:%M') }} ({{ c.trvanie_format }}){% else %}<strong style="color:var(--green)">Prebieha</strong>{% endif %}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% else %}
+<!-- START TIMER -->
+<div class="card">
+  <div class="card-title">🚀 Začať pracovať</div>
+  {% if klienti %}
+  <form method="POST" action="{{ url_for('start_cas') }}">
+    <div class="grid-2" style="align-items:flex-end;gap:16px">
+      <div class="form-group mb-0">
+        <label>Vyberte klienta</label>
+        <select name="klient_id" required>
+          <option value="">— Vyberte klienta —</option>
+          {% for k in klienti %}
+          <option value="{{ k.id }}">{{ k.nazov }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-success btn-lg">▶ Spustiť časovač</button>
+    </div>
+  </form>
+  {% else %}
+  <div class="empty-state">
+    <div class="icon">👥</div>
+    <p>Nemáte žiadnych klientov.</p>
+    <a href="{{ url_for('klienti') }}" class="btn btn-primary mt-16">Pridať klienta</a>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- POSLEDNÉ ZÁZNAMY -->
+<div class="card mb-0">
+  <div class="card-header">
+    <h3>Posledné záznamy</h3>
+    <a href="{{ url_for('vykaz') }}" class="btn btn-outline btn-sm">Zobraziť všetky →</a>
+  </div>
+  {% if posledne %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Dátum</th>
+          <th>Klient</th>
+          <th>Čas</th>
+          <th>Trvanie</th>
+          <th>Poznámka</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for z in posledne %}
+        <tr>
+          <td>{{ z.datum.strftime('%d.%m.%Y') }}</td>
+          <td><strong>{{ z.klient.nazov }}</strong></td>
+          <td class="text-muted">{{ z.cas_start.strftime('%H:%M') }} – {{ z.cas_stop.strftime('%H:%M') }}</td>
+          <td><span class="badge badge-blue">{{ z.trvanie_format }}</span></td>
+          <td class="text-muted text-sm">{{ z.poznamka or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="icon">📋</div>
+    <p class="text-muted">Zatiaľ žiadne záznamy.</p>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+{% if aktivny %}
+const startTime = new Date("{{ aktivny.cas_start.isoformat() }}");
+function updateTimer() {
+  const now = new Date();
+  const diff = Math.floor((now - startTime) / 1000);
+  const h = String(Math.floor(diff / 3600)).padStart(2, '0');
+  const m = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
+  const s = String(diff % 60).padStart(2, '0');
+  document.getElementById('timerDisplay').textContent = h + ':' + m + ':' + s;
+}
+updateTimer();
+setInterval(updateTimer, 1000);
+{% endif %}
+</script>
+{% endblock %}

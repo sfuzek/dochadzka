@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block body %}
+<div class="layout">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <h1>⏱ Dochádzka</h1>
+      <p>Firemný systém</p>
+    </div>
+    <div class="sidebar-user">
+      <strong>{{ current_user.meno }}</strong>
+      <span class="text-sm" style="opacity:.6">{{ current_user.email }}</span>
+      {% if current_user.is_admin %}<span class="badge-admin">Správca</span>{% endif %}
+    </div>
+    <nav>
+      <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
+        <span class="nav-icon">🏠</span> Dashboard
+      </a>
+      <a href="{{ url_for('klienti') }}" class="nav-link {% if request.endpoint == 'klienti' %}active{% endif %}">
+        <span class="nav-icon">👥</span> Klienti
+      </a>
+      <a href="{{ url_for('vykaz') }}" class="nav-link {% if request.endpoint == 'vykaz' %}active{% endif %}">
+        <span class="nav-icon">📊</span> Môj výkaz
+      </a>
+      {% if current_user.is_admin %}
+      <div class="nav-section">Správca</div>
+      <a href="{{ url_for('admin') }}" class="nav-link {% if 'admin' in request.endpoint %}active{% endif %}">
+        <span class="nav-icon">🛡</span> Všetci zamestnanci
+      </a>
+      {% endif %}
+    </nav>
+    <div class="sidebar-footer">
+      <a href="{{ url_for('logout') }}">⬅ Odhlásiť sa</a>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <h2>{% block page_title %}{% endblock %}</h2>
+      <div class="flex-center gap-8">
+        {% block topbar_actions %}{% endblock %}
+      </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-wrap">
+          {% for cat, msg in messages %}
+            <div class="flash {{ cat }}">{{ msg }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+{% endblock %}

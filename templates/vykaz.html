@@ -1,0 +1,131 @@
+{% extends 'layout.html' %}
+{% block title %}Môj výkaz — Dochádzka{% endblock %}
+{% block page_title %}Môj výkaz{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('export_excel', datum_od=datum_od, datum_do=datum_do, klient_id=klient_id) }}"
+   class="btn btn-success btn-sm">⬇ Export do Excelu</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- FILTRE -->
+<div class="card">
+  <div class="card-title">🔍 Filtrovanie</div>
+  <form method="GET" class="filters">
+    <div class="form-group">
+      <label>Dátum od</label>
+      <input type="date" name="datum_od" value="{{ datum_od }}">
+    </div>
+    <div class="form-group">
+      <label>Dátum do</label>
+      <input type="date" name="datum_do" value="{{ datum_do }}">
+    </div>
+    <div class="form-group">
+      <label>Klient</label>
+      <select name="klient_id">
+        <option value="">Všetci klienti</option>
+        {% for k in klienti %}
+        <option value="{{ k.id }}" {% if klient_id == k.id|string %}selected{% endif %}>{{ k.nazov }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button type="submit" class="btn btn-primary">Filtrovať</button>
+      <a href="{{ url_for('vykaz') }}" class="btn btn-outline">Zrušiť</a>
+    </div>
+  </form>
+</div>
+
+<!-- SÚHRN -->
+<div class="grid-3" style="margin-bottom:20px">
+  <div class="stat-box">
+    <div class="stat-label">Celkový čas</div>
+    <div class="stat-value" style="color:var(--blue)">{{ celkovy }}</div>
+    <div class="stat-sub">hodín:minút</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">Počet záznamov</div>
+    <div class="stat-value">{{ zaznamy|length }}</div>
+    <div class="stat-sub">pracovných blokov</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">Klientov v období</div>
+    <div class="stat-value">{{ zaznamy|map(attribute='klient_id')|unique|list|length }}</div>
+    <div class="stat-sub">rôznych klientov</div>
+  </div>
+</div>
+
+<!-- TABUĽKA -->
+<div class="card mb-0">
+  {% if zaznamy %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Dátum</th>
+          <th>Klient</th>
+          <th>Začiatok</th>
+          <th>Koniec</th>
+          <th>Trvanie</th>
+          <th>Činnosti</th>
+          <th>Poznámka</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for z in zaznamy %}
+        <tr>
+          <td><strong>{{ z.datum.strftime('%d.%m.%Y') }}</strong></td>
+          <td>{{ z.klient.nazov }}</td>
+          <td class="text-muted">{{ z.cas_start.strftime('%H:%M') }}</td>
+          <td class="text-muted">{{ z.cas_stop.strftime('%H:%M') }}</td>
+          <td><span class="badge badge-blue fw-600">{{ z.trvanie_format }}</span></td>
+          <td>
+            {% if z.cinnosti %}
+              <details>
+                <summary style="cursor:pointer;font-size:12px;color:var(--blue)">
+                  {{ z.cinnosti|length }} činností
+                </summary>
+                <div style="margin-top:6px">
+                  {% for c in z.cinnosti %}
+                  <div class="cinnost-item" style="margin-bottom:4px;font-size:12px">
+                    <span>📌 {{ c.popis }}</span>
+                    <span class="cinnost-time">{{ c.cas_od.strftime('%H:%M') }} – {% if c.cas_do %}{{ c.cas_do.strftime('%H:%M') }}{% else %}—{% endif %} ({{ c.trvanie_format }})</span>
+                  </div>
+                  {% endfor %}
+                </div>
+              </details>
+            {% else %}
+              <span class="text-muted text-sm">—</span>
+            {% endif %}
+          </td>
+          <td>
+            <details>
+              <summary style="cursor:pointer;font-size:12px;color:var(--blue)">
+                {% if z.poznamka %}✏ Upraviť{% else %}+ Pridať{% endif %}
+              </summary>
+              <form method="POST" action="{{ url_for('ulozit_poznamku', zaznam_id=z.id) }}" style="margin-top:8px">
+                <textarea name="poznamka" rows="2" style="font-size:12px">{{ z.poznamka or '' }}</textarea>
+                <button type="submit" class="btn btn-primary btn-xs" style="margin-top:4px">Uložiť</button>
+              </form>
+            </details>
+          </td>
+          <td class="td-right">
+            <span class="text-muted text-sm">
+              {{ z.cas_start.strftime('%d.%m') }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="icon">📋</div>
+    <p>Žiadne záznamy pre zvolené filtre.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
