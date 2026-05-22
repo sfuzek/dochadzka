@@ -13,7 +13,9 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dochadzka-dev-key-zmenit')
 database_url = os.environ.get('DATABASE_URL', 'sqlite:///dochadzka.db')
 if database_url.startswith('postgres://'):
-    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    database_url = database_url.replace('postgres://', 'postgresql+pg8000://', 1)
+elif database_url.startswith('postgresql://'):
+    database_url = database_url.replace('postgresql://', 'postgresql+pg8000://', 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
