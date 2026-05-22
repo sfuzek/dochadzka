@@ -22,6 +22,9 @@
       <a href="{{ url_for('vykaz') }}" class="nav-link {% if request.endpoint == 'vykaz' %}active{% endif %}">
         <span class="nav-icon">📊</span> Môj výkaz
       </a>
+      <a href="{{ url_for('ulohy') }}" class="nav-link {% if request.endpoint == 'ulohy' %}active{% endif %}">
+        <span class="nav-icon">📋</span> Úlohy
+      </a>
       {% if current_user.is_admin %}
       <div class="nav-section">Správca</div>
       <a href="{{ url_for('admin') }}" class="nav-link {% if 'admin' in request.endpoint %}active{% endif %}">

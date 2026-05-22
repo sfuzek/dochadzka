@@ -8,8 +8,6 @@
 {% endblock %}
 
 {% block content %}
-
-<!-- FILTRE -->
 <div class="card">
   <div class="card-title">🔍 Filtrovanie</div>
   <form method="GET" class="filters">
@@ -37,7 +35,6 @@
   </form>
 </div>
 
-<!-- SÚHRN -->
 <div class="grid-3" style="margin-bottom:20px">
   <div class="stat-box">
     <div class="stat-label">Celkový čas</div>
@@ -56,21 +53,14 @@
   </div>
 </div>
 
-<!-- TABUĽKA -->
 <div class="card mb-0">
   {% if zaznamy %}
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          <th>Dátum</th>
-          <th>Klient</th>
-          <th>Začiatok</th>
-          <th>Koniec</th>
-          <th>Trvanie</th>
-          <th>Činnosti</th>
-          <th>Poznámka</th>
-          <th></th>
+          <th>Dátum</th><th>Klient</th><th>Začiatok</th><th>Koniec</th>
+          <th>Trvanie</th><th>Činnosti</th><th>Poznámka</th>
         </tr>
       </thead>
       <tbody>
@@ -83,38 +73,41 @@
           <td><span class="badge badge-blue fw-600">{{ z.trvanie_format }}</span></td>
           <td>
             {% if z.cinnosti %}
-              <details>
-                <summary style="cursor:pointer;font-size:12px;color:var(--blue)">
-                  {{ z.cinnosti|length }} činností
-                </summary>
-                <div style="margin-top:6px">
-                  {% for c in z.cinnosti %}
-                  <div class="cinnost-item" style="margin-bottom:4px;font-size:12px">
-                    <span>📌 {{ c.popis }}</span>
-                    <span class="cinnost-time">{{ c.cas_od.strftime('%H:%M') }} – {% if c.cas_do %}{{ c.cas_do.strftime('%H:%M') }}{% else %}—{% endif %} ({{ c.trvanie_format }})</span>
-                  </div>
-                  {% endfor %}
+            <details>
+              <summary style="cursor:pointer;font-size:12px;color:var(--blue)">{{ z.cinnosti|length }} činností</summary>
+              <div style="margin-top:6px">
+                {% for c in z.cinnosti %}
+                <div class="cinnost-item" style="font-size:12px">
+                  <span>📌 {{ c.popis }}</span>
+                  <span class="cinnost-time">{{ c.cas_od.strftime('%H:%M') }} – {% if c.cas_do %}{{ c.cas_do.strftime('%H:%M') }}{% else %}—{% endif %} ({{ c.trvanie_format }})</span>
                 </div>
-              </details>
-            {% else %}
-              <span class="text-muted text-sm">—</span>
+                {% endfor %}
+              </div>
+            </details>
             {% endif %}
+            <!-- Pridať činnosť dodatočne -->
+            <details style="margin-top:4px">
+              <summary style="cursor:pointer;font-size:11px;color:var(--muted)">+ Pridať činnosť</summary>
+              <form method="POST" action="{{ url_for('pridat_cinnost') }}" style="margin-top:6px">
+                <input type="hidden" name="zaznam_id" value="{{ z.id }}">
+                <input type="hidden" name="redirect" value="vykaz">
+                <div style="display:flex;gap:6px">
+                  <input type="text" name="popis" placeholder="Popis činnosti" style="flex:1;font-size:12px;padding:5px 8px">
+                  <button type="submit" class="btn btn-primary btn-xs">Pridať</button>
+                </div>
+              </form>
+            </details>
           </td>
           <td>
             <details>
               <summary style="cursor:pointer;font-size:12px;color:var(--blue)">
-                {% if z.poznamka %}✏ Upraviť{% else %}+ Pridať{% endif %}
+                {% if z.poznamka %}✏ {{ z.poznamka|truncate(30) }}{% else %}+ Pridať{% endif %}
               </summary>
               <form method="POST" action="{{ url_for('ulozit_poznamku', zaznam_id=z.id) }}" style="margin-top:8px">
                 <textarea name="poznamka" rows="2" style="font-size:12px">{{ z.poznamka or '' }}</textarea>
                 <button type="submit" class="btn btn-primary btn-xs" style="margin-top:4px">Uložiť</button>
               </form>
             </details>
-          </td>
-          <td class="td-right">
-            <span class="text-muted text-sm">
-              {{ z.cas_start.strftime('%d.%m') }}
-            </span>
           </td>
         </tr>
         {% endfor %}

@@ -1,0 +1,113 @@
+{% extends 'layout.html' %}
+{% block title %}Úlohy — Dochádzka{% endblock %}
+{% block page_title %}Úlohy{% endblock %}
+
+{% block content %}
+<div class="grid-2">
+  <!-- Nová úloha -->
+  <div class="card mb-0">
+    <div class="card-title">📤 Poslať úlohu</div>
+    <form method="POST" action="{{ url_for('pridat_ulohu') }}">
+      <div class="form-group">
+        <label>Príjemca</label>
+        <select name="prijimatel_id" required>
+          <option value="">— Vyber zamestnanca —</option>
+          {% for u in users %}
+          <option value="{{ u.id }}">{{ u.meno }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Popis úlohy</label>
+        <textarea name="text" rows="3" placeholder="Čo treba urobiť..." required></textarea>
+      </div>
+      <div class="form-group">
+        <label>Urgencia</label>
+        <select name="urgencia">
+          <option value="1">🟢 Nízka</option>
+          <option value="2" selected>🟡 Stredná</option>
+          <option value="3">🔴 Vysoká / Urgentné</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">Odoslať úlohu</button>
+    </form>
+  </div>
+
+  <!-- Prijaté úlohy -->
+  <div class="card mb-0">
+    <div class="card-title">📥 Moje úlohy ({{ prijate|length }})</div>
+    {% if prijate %}
+      {% for u in prijate %}
+      <div style="border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;
+                  {% if u.hotovo %}opacity:0.5;background:#F8FAFC{% endif %}">
+        <div style="display:flex;align-items:flex-start;gap:10px">
+          <div style="flex:1">
+            {% if u.urgencia == 3 %}<span class="badge badge-red" style="margin-bottom:6px;display:inline-block">🔴 Urgentné</span>
+            {% elif u.urgencia == 2 %}<span class="badge badge-orange" style="margin-bottom:6px;display:inline-block">🟡 Stredné</span>
+            {% else %}<span class="badge badge-green" style="margin-bottom:6px;display:inline-block">🟢 Nízke</span>{% endif %}
+            <div style="font-size:14px;{% if u.hotovo %}text-decoration:line-through{% endif %}">{{ u.text }}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">
+              Od: {{ u.odosielatel.meno }} · {{ u.created_at.strftime('%d.%m.%Y %H:%M') }}
+              {% if u.hotovo and u.hotovo_at %} · ✅ Hotovo: {{ u.hotovo_at.strftime('%d.%m.%Y %H:%M') }}{% endif %}
+            </div>
+          </div>
+          <form method="POST" action="{{ url_for('oznacit_hotovo', uloha_id=u.id) }}">
+            <button type="submit" class="btn btn-xs {% if u.hotovo %}btn-outline{% else %}btn-success{% endif %}">
+              {% if u.hotovo %}↩ Otvoriť{% else %}✅ Hotovo{% endif %}
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+    <div class="empty-state" style="padding:20px">
+      <div class="icon">🎉</div>
+      <p class="text-muted">Žiadne úlohy pre vás!</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Odoslané úlohy -->
+<div class="card mt-16" style="margin-top:20px">
+  <div class="card-title">📤 Odoslané úlohy ({{ odoslane|length }})</div>
+  {% if odoslane %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Príjemca</th><th>Úloha</th><th>Urgencia</th><th>Odoslané</th><th>Stav</th></tr>
+      </thead>
+      <tbody>
+        {% for u in odoslane %}
+        <tr style="{% if u.hotovo %}opacity:0.6{% endif %}">
+          <td><strong>{{ u.prijimatel.meno }}</strong></td>
+          <td style="{% if u.hotovo %}text-decoration:line-through{% endif %}">{{ u.text }}</td>
+          <td>
+            {% if u.urgencia == 3 %}<span class="badge badge-red">🔴 Urgentné</span>
+            {% elif u.urgencia == 2 %}<span class="badge badge-orange">🟡 Stredné</span>
+            {% else %}<span class="badge badge-green">🟢 Nízke</span>{% endif %}
+          </td>
+          <td class="text-muted text-sm">{{ u.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+          <td>
+            {% if u.hotovo %}
+              <span class="badge badge-green">✅ Hotovo</span>
+              {% if u.hotovo_at %}
+              <div class="text-sm text-muted">{{ u.hotovo_at.strftime('%d.%m.%Y %H:%M') }}</div>
+              {% endif %}
+            {% else %}
+              <span class="badge badge-orange">⏳ Čaká</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="icon">📤</div>
+    <p class="text-muted">Zatiaľ ste neodoslali žiadnu úlohu.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

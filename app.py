@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file, jsonify
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from models import db, User, Klient, Zaznam, Cinnost
-from datetime import datetime
+from models import db, User, Klient, Zaznam, Cinnost, Uloha
+from datetime import datetime, timezone, timedelta
 import bcrypt
 import io
 import os
@@ -25,6 +25,10 @@ login_manager.login_view = 'login'
 login_manager.login_message = 'Pre prístup sa prosím prihláste.'
 login_manager.login_message_category = 'error'
 
+def now_sk():
+    """Aktuálny čas v slovenskom časovom pásme (UTC+2 leto, UTC+1 zima)."""
+    return datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=2))).replace(tzinfo=None)
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -46,9 +50,9 @@ def registracia():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
     if request.method == 'POST':
-        meno  = request.form.get('meno', '').strip()
-        email = request.form.get('email', '').strip().lower()
-        heslo = request.form.get('heslo', '')
+        meno   = request.form.get('meno', '').strip()
+        email  = request.form.get('email', '').strip().lower()
+        heslo  = request.form.get('heslo', '')
         heslo2 = request.form.get('heslo2', '')
         if not meno or not email or not heslo:
             flash('Vyplňte všetky polia.', 'error')
@@ -104,7 +108,11 @@ def dashboard():
     posledne = Zaznam.query.filter_by(user_id=current_user.id)\
                            .filter(Zaznam.cas_stop.isnot(None))\
                            .order_by(Zaznam.cas_start.desc()).limit(5).all()
-    return render_template('dashboard.html', aktivny=aktivny, klienti=klienti, posledne=posledne)
+    # Úlohy pre mňa (neprebehnuté)
+    moje_ulohy = Uloha.query.filter_by(prijimatel_id=current_user.id, hotovo=False)\
+                             .order_by(Uloha.urgencia.desc(), Uloha.created_at.desc()).all()
+    return render_template('dashboard.html', aktivny=aktivny, klienti=klienti,
+                           posledne=posledne, moje_ulohy=moje_ulohy)
 
 
 # ── ČASOVAČ ───────────────────────────────────────────────────────────────────
@@ -120,7 +128,7 @@ def start_cas():
     if not klient:
         flash('Vyberte platného klienta.', 'error')
         return redirect(url_for('dashboard'))
-    now = datetime.now()
+    now = now_sk()
     zaznam = Zaznam(user_id=current_user.id, klient_id=klient.id, datum=now.date(), cas_start=now)
     db.session.add(zaznam)
     db.session.commit()
@@ -135,7 +143,7 @@ def stop_cas():
     if not zaznam:
         flash('Záznam nenájdený.', 'error')
         return redirect(url_for('dashboard'))
-    now = datetime.now()
+    now = now_sk()
     zaznam.cas_stop = now
     posledna = Cinnost.query.filter_by(zaznam_id=zaznam.id, cas_do=None).first()
     if posledna:
@@ -150,29 +158,31 @@ def stop_cas():
 @app.route('/cinnost/pridat', methods=['POST'])
 @login_required
 def pridat_cinnost():
-    zaznam_id = request.form.get('zaznam_id')
-    popis     = request.form.get('popis', '').strip()
+    zaznam_id  = request.form.get('zaznam_id')
+    popis      = request.form.get('popis', '').strip()
+    redirect_to = request.form.get('redirect', 'dashboard')
     if not popis:
         flash('Zadajte popis činnosti.', 'error')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for(redirect_to))
     zaznam = Zaznam.query.filter_by(id=zaznam_id, user_id=current_user.id).first()
     if not zaznam:
         flash('Záznam nenájdený.', 'error')
-        return redirect(url_for('dashboard'))
-    now = datetime.now()
+        return redirect(url_for(redirect_to))
+    now = now_sk()
     posledna = Cinnost.query.filter_by(zaznam_id=zaznam.id, cas_do=None).first()
     if posledna:
         posledna.cas_do = now
+    # Ak je záznam už ukončený, čas činnosti = teraz (len zápis)
     cinnost = Cinnost(
         zaznam_id=zaznam.id,
         popis=popis,
         cas_od=now,
-        cas_do=None if zaznam.cas_stop is None else now
+        cas_do=now if zaznam.cas_stop is not None else None
     )
     db.session.add(cinnost)
     db.session.commit()
     flash('Činnosť pridaná.', 'success')
-    return redirect(url_for('dashboard'))
+    return redirect(url_for(redirect_to))
 
 @app.route('/zaznam/<int:zaznam_id>/poznamka', methods=['POST'])
 @login_required
@@ -205,6 +215,19 @@ def pridat_klienta():
     db.session.add(Klient(nazov=nazov, user_id=current_user.id))
     db.session.commit()
     flash(f'Klient „{nazov}" pridaný.', 'success')
+    return redirect(url_for('klienti'))
+
+@app.route('/klient/<int:klient_id>/upravit', methods=['POST'])
+@login_required
+def upravit_klienta(klient_id):
+    klient = Klient.query.filter_by(id=klient_id, user_id=current_user.id).first_or_404()
+    novy_nazov = request.form.get('nazov', '').strip()
+    if not novy_nazov:
+        flash('Názov nemôže byť prázdny.', 'error')
+        return redirect(url_for('klienti'))
+    klient.nazov = novy_nazov
+    db.session.commit()
+    flash(f'Klient premenovaný na „{novy_nazov}".', 'success')
     return redirect(url_for('klienti'))
 
 @app.route('/klient/<int:klient_id>/archivovat', methods=['POST'])
@@ -257,7 +280,7 @@ def export_excel():
     zaznamy   = _filter_zaznamy(current_user.id, datum_od, datum_do, klient_id)\
                     .order_by(Zaznam.datum.asc(), Zaznam.cas_start.asc()).all()
     output = _build_excel(zaznamy, current_user.meno)
-    filename = f'dochadzka_{current_user.meno.replace(" ","_")}_{datetime.now().strftime("%Y%m%d")}.xlsx'
+    filename = f'dochadzka_{current_user.meno.replace(" ","_")}_{now_sk().strftime("%Y%m%d")}.xlsx'
     return send_file(output, as_attachment=True, download_name=filename,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
@@ -305,7 +328,7 @@ def admin_export(user_id):
     zaznamy   = _filter_zaznamy(user_id, datum_od, datum_do, klient_id)\
                     .order_by(Zaznam.datum.asc(), Zaznam.cas_start.asc()).all()
     output   = _build_excel(zaznamy, user.meno)
-    filename = f'dochadzka_{user.meno.replace(" ","_")}_{datetime.now().strftime("%Y%m%d")}.xlsx'
+    filename = f'dochadzka_{user.meno.replace(" ","_")}_{now_sk().strftime("%Y%m%d")}.xlsx'
     return send_file(output, as_attachment=True, download_name=filename,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
@@ -325,6 +348,55 @@ def toggle_admin(user_id):
     return redirect(url_for('admin'))
 
 
+# ── ÚLOHY ─────────────────────────────────────────────────────────────────────
+
+@app.route('/ulohy')
+@login_required
+def ulohy():
+    # Úlohy ktoré som ja poslal
+    odoslane = Uloha.query.filter_by(odosielatel_id=current_user.id)\
+                          .order_by(Uloha.hotovo.asc(), Uloha.urgencia.desc(), Uloha.created_at.desc()).all()
+    # Úlohy pre mňa
+    prijate = Uloha.query.filter_by(prijimatel_id=current_user.id)\
+                         .order_by(Uloha.hotovo.asc(), Uloha.urgencia.desc(), Uloha.created_at.desc()).all()
+    users = User.query.filter(User.id != current_user.id).order_by(User.meno).all()
+    return render_template('ulohy.html', odoslane=odoslane, prijate=prijate, users=users)
+
+@app.route('/uloha/pridat', methods=['POST'])
+@login_required
+def pridat_ulohu():
+    prijimatel_id = request.form.get('prijimatel_id')
+    text          = request.form.get('text', '').strip()
+    urgencia      = int(request.form.get('urgencia', 2))
+    if not text or not prijimatel_id:
+        flash('Vyplňte všetky polia.', 'error')
+        return redirect(url_for('ulohy'))
+    prijimatel = User.query.get(prijimatel_id)
+    if not prijimatel:
+        flash('Príjemca nenájdený.', 'error')
+        return redirect(url_for('ulohy'))
+    uloha = Uloha(
+        odosielatel_id=current_user.id,
+        prijimatel_id=int(prijimatel_id),
+        text=text,
+        urgencia=urgencia,
+        created_at=now_sk()
+    )
+    db.session.add(uloha)
+    db.session.commit()
+    flash(f'Úloha odoslaná pre {prijimatel.meno}.', 'success')
+    return redirect(url_for('ulohy'))
+
+@app.route('/uloha/<int:uloha_id>/hotovo', methods=['POST'])
+@login_required
+def oznacit_hotovo(uloha_id):
+    uloha = Uloha.query.filter_by(id=uloha_id, prijimatel_id=current_user.id).first_or_404()
+    uloha.hotovo = not uloha.hotovo
+    uloha.hotovo_at = now_sk() if uloha.hotovo else None
+    db.session.commit()
+    return redirect(url_for('ulohy'))
+
+
 # ── EXCEL BUILDER ─────────────────────────────────────────────────────────────
 
 def _build_excel(zaznamy, meno):
@@ -332,23 +404,20 @@ def _build_excel(zaznamy, meno):
     ws = wb.active
     ws.title = 'Dochádzka'
 
-    navy   = '1E3A5F'
-    blue2  = '2E6DA4'
-    white  = 'FFFFFF'
-    light  = 'EEF4FB'
-    gray   = 'F5F5F5'
+    navy  = '1E3A5F'
+    blue2 = '2E6DA4'
+    white = 'FFFFFF'
+    light = 'EEF4FB'
 
-    hdr_font  = Font(bold=True, color=white, name='Calibri', size=11)
-    hdr_fill  = PatternFill('solid', start_color=navy)
-    hdr_fill2 = PatternFill('solid', start_color=blue2)
-    alt_fill  = PatternFill('solid', start_color=light)
-    center    = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    left      = Alignment(horizontal='left',   vertical='center', wrap_text=True)
+    hdr_font = Font(bold=True, color=white, name='Calibri', size=11)
+    hdr_fill = PatternFill('solid', start_color=navy)
+    alt_fill = PatternFill('solid', start_color=light)
+    center   = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    left     = Alignment(horizontal='left',   vertical='center', wrap_text=True)
     thin = lambda: Border(
         left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
         top=Side(style='thin', color='CCCCCC'),  bottom=Side(style='thin', color='CCCCCC'))
 
-    # Titulok
     ws.merge_cells('A1:I1')
     ws['A1'] = f'Výkaz dochádzky — {meno}'
     ws['A1'].font = Font(bold=True, size=15, color=navy, name='Calibri')
@@ -356,40 +425,29 @@ def _build_excel(zaznamy, meno):
     ws.row_dimensions[1].height = 32
 
     ws.merge_cells('A2:I2')
-    ws['A2'] = f'Exportované: {datetime.now().strftime("%d.%m.%Y %H:%M")}'
+    ws['A2'] = f'Exportované: {now_sk().strftime("%d.%m.%Y %H:%M")}'
     ws['A2'].font = Font(size=9, color='888888', name='Calibri')
     ws['A2'].alignment = center
     ws.row_dimensions[2].height = 15
 
-    # Hlavičky
-    cols = ['Dátum', 'Klient', 'Začiatok', 'Koniec', 'Celkový čas',
-            'Činnosť', 'Od', 'Do', 'Poznámka']
+    cols   = ['Dátum', 'Klient', 'Začiatok', 'Koniec', 'Celkový čas', 'Činnosť', 'Od', 'Do', 'Poznámka']
     widths = [14, 22, 11, 11, 13, 38, 11, 11, 28]
     for ci, (h, w) in enumerate(zip(cols, widths), 1):
         c = ws.cell(row=3, column=ci, value=h)
-        c.font = hdr_font
-        c.fill = hdr_fill
-        c.alignment = center
-        c.border = thin()
+        c.font = hdr_font; c.fill = hdr_fill; c.alignment = center; c.border = thin()
         ws.column_dimensions[get_column_letter(ci)].width = w
     ws.row_dimensions[3].height = 24
 
     row = 4
     for i, z in enumerate(zaznamy):
         cinnosti = z.cinnosti if z.cinnosti else [None]
-        use_alt  = (i % 2 == 0)
-        fill     = alt_fill if use_alt else PatternFill('solid', start_color=white)
-
+        fill     = alt_fill if (i % 2 == 0) else PatternFill('solid', start_color=white)
         for ji, cin in enumerate(cinnosti):
-            is_first = (ji == 0)
             for ci in range(1, 10):
                 c = ws.cell(row=row, column=ci)
-                c.border = thin()
-                c.fill   = fill
-                c.alignment = left
-                c.font   = Font(name='Calibri', size=10)
-
-            if is_first:
+                c.border = thin(); c.fill = fill; c.alignment = left
+                c.font = Font(name='Calibri', size=10)
+            if ji == 0:
                 ws.cell(row=row, column=1).value = z.datum.strftime('%d.%m.%Y') if z.datum else ''
                 ws.cell(row=row, column=1).alignment = center
                 ws.cell(row=row, column=2).value = z.klient.nazov if z.klient else ''
@@ -401,18 +459,15 @@ def _build_excel(zaznamy, meno):
                 ws.cell(row=row, column=5).alignment = center
                 ws.cell(row=row, column=5).font = Font(name='Calibri', size=10, bold=True)
                 ws.cell(row=row, column=9).value = z.poznamka or ''
-
             if cin:
                 ws.cell(row=row, column=6).value = cin.popis
                 ws.cell(row=row, column=7).value = cin.cas_od.strftime('%H:%M') if cin.cas_od else ''
                 ws.cell(row=row, column=7).alignment = center
                 ws.cell(row=row, column=8).value = cin.cas_do.strftime('%H:%M') if cin.cas_do else ''
                 ws.cell(row=row, column=8).alignment = center
-
             ws.row_dimensions[row].height = 18
             row += 1
 
-    # Súhrn
     row += 1
     celk_sek = sum(z.trvanie_sekundy or 0 for z in zaznamy)
     celk_str = f'{celk_sek // 3600:02d}:{(celk_sek % 3600) // 60:02d}'
@@ -426,7 +481,6 @@ def _build_excel(zaznamy, meno):
     ws.cell(row=row, column=5).fill  = PatternFill('solid', start_color=blue2)
     ws.cell(row=row, column=5).alignment = center
     ws.row_dimensions[row].height = 24
-
     ws.freeze_panes = 'A4'
 
     output = io.BytesIO()

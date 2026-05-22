@@ -4,8 +4,25 @@
 
 {% block content %}
 
+{% if moje_ulohy %}
+<div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:12px;padding:16px 20px;margin-bottom:20px">
+  <div style="font-weight:600;font-size:13px;color:#92400E;margin-bottom:10px">
+    📋 Máte {{ moje_ulohy|length }} nevybavenú/é úlohu/y
+  </div>
+  {% for u in moje_ulohy %}
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+    {% if u.urgencia == 3 %}<span class="badge badge-red">🔴 Urgentné</span>
+    {% elif u.urgencia == 2 %}<span class="badge badge-orange">🟡 Stredné</span>
+    {% else %}<span class="badge badge-gray">🟢 Nízke</span>{% endif %}
+    <span style="font-size:13px;flex:1">{{ u.text }}</span>
+    <span style="font-size:11px;color:var(--muted)">od: {{ u.odosielatel.meno }}</span>
+    <a href="{{ url_for('ulohy') }}" class="btn btn-outline btn-xs">Vybaviť →</a>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% if aktivny %}
-<!-- ACTIVE TIMER -->
 <div class="timer-card">
   <div class="label">⏱ Aktívny časovač</div>
   <div class="timer-display" id="timerDisplay">00:00:00</div>
@@ -14,9 +31,9 @@
     Začiatok: {{ aktivny.cas_start.strftime('%H:%M') }} dňa {{ aktivny.cas_start.strftime('%d.%m.%Y') }}
   </div>
 
-  <!-- Pridanie činnosti -->
   <form method="POST" action="{{ url_for('pridat_cinnost') }}" style="margin-top:18px">
     <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
+    <input type="hidden" name="redirect" value="dashboard">
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <input type="text" name="popis" placeholder="Popíšte činnosť (napr. analýza, fakturácia...)"
              style="flex:1;min-width:200px;background:rgba(255,255,255,0.15);border-color:rgba(255,255,255,0.3);color:#fff;">
@@ -26,8 +43,7 @@
     </div>
   </form>
 
-  <!-- Zastavenie -->
-  <form method="POST" action="{{ url_for('stop_cas') }}" class="timer-actions" id="stopForm">
+  <form method="POST" action="{{ url_for('stop_cas') }}" class="timer-actions">
     <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
     <div style="display:flex;gap:10px;flex:1;flex-wrap:wrap">
       <input type="text" name="poznamka" placeholder="Záverečná poznámka (voliteľné)"
@@ -37,9 +53,8 @@
   </form>
 </div>
 
-<!-- Priebežné činnosti -->
 {% if aktivny.cinnosti %}
-<div class="card mb-0">
+<div class="card">
   <div class="card-title">Zaznamenané činnosti</div>
   <div class="cinnosti-list">
     {% for c in aktivny.cinnosti %}
@@ -48,7 +63,8 @@
       <span class="cinnost-popis">{{ c.popis }}</span>
       <span class="cinnost-time">
         {{ c.cas_od.strftime('%H:%M') }} –
-        {% if c.cas_do %}{{ c.cas_do.strftime('%H:%M') }} ({{ c.trvanie_format }}){% else %}<strong style="color:var(--green)">Prebieha</strong>{% endif %}
+        {% if c.cas_do %}{{ c.cas_do.strftime('%H:%M') }} ({{ c.trvanie_format }})
+        {% else %}<strong style="color:var(--green)">Prebieha</strong>{% endif %}
       </span>
     </div>
     {% endfor %}
@@ -57,7 +73,6 @@
 {% endif %}
 
 {% else %}
-<!-- START TIMER -->
 <div class="card">
   <div class="card-title">🚀 Začať pracovať</div>
   {% if klienti %}
@@ -85,7 +100,6 @@
 </div>
 {% endif %}
 
-<!-- POSLEDNÉ ZÁZNAMY -->
 <div class="card mb-0">
   <div class="card-header">
     <h3>Posledné záznamy</h3>
@@ -96,11 +110,7 @@
     <table>
       <thead>
         <tr>
-          <th>Dátum</th>
-          <th>Klient</th>
-          <th>Čas</th>
-          <th>Trvanie</th>
-          <th>Poznámka</th>
+          <th>Dátum</th><th>Klient</th><th>Čas</th><th>Trvanie</th><th>Poznámka</th>
         </tr>
       </thead>
       <tbody>
@@ -126,10 +136,15 @@
 
 <script>
 {% if aktivny %}
-const startTime = new Date("{{ aktivny.cas_start.isoformat() }}");
+const startTime = new Date("{{ aktivny.cas_start.strftime('%Y-%m-%dT%H:%M:%S') }}");
+// Oprava timezone: server ukladá SK čas, prehliadač interpretuje ako local
 function updateTimer() {
   const now = new Date();
-  const diff = Math.floor((now - startTime) / 1000);
+  // Rozdiel medzi teraz a startom v sekundách
+  const localOffset = now.getTimezoneOffset() * 60000;
+  const skOffset = -2 * 3600000; // UTC+2
+  const startLocal = new Date(startTime.getTime() - localOffset + skOffset);
+  const diff = Math.max(0, Math.floor((now - startLocal) / 1000));
   const h = String(Math.floor(diff / 3600)).padStart(2, '0');
   const m = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
   const s = String(diff % 60).padStart(2, '0');

@@ -4,7 +4,6 @@
 
 {% block content %}
 <div class="grid-2">
-  <!-- Pridanie klienta -->
   <div class="card mb-0">
     <div class="card-title">➕ Pridať klienta</div>
     <form method="POST" action="{{ url_for('pridat_klienta') }}">
@@ -15,8 +14,6 @@
       <button type="submit" class="btn btn-primary">Pridať klienta</button>
     </form>
   </div>
-
-  <!-- Štatistiky -->
   <div class="card mb-0">
     <div class="card-title">📊 Prehľad</div>
     <div style="display:flex;gap:20px">
@@ -39,32 +36,39 @@
     <table>
       <thead>
         <tr>
-          <th>Názov klienta</th>
-          <th>Pridaný</th>
-          <th>Záznamy</th>
-          <th>Stav</th>
-          <th></th>
+          <th>Názov klienta</th><th>Pridaný</th><th>Záznamy</th><th>Stav</th><th>Akcie</th>
         </tr>
       </thead>
       <tbody>
         {% for k in klienti %}
         <tr>
-          <td><strong>{{ k.nazov }}</strong></td>
+          <td>
+            <!-- Inline editovanie názvu -->
+            <span id="nazov-{{ k.id }}" style="font-weight:600">{{ k.nazov }}</span>
+            <form id="edit-form-{{ k.id }}" method="POST" action="{{ url_for('upravit_klienta', klient_id=k.id) }}"
+                  style="display:none;margin-top:6px">
+              <div style="display:flex;gap:8px">
+                <input type="text" name="nazov" value="{{ k.nazov }}" style="flex:1;padding:6px 10px;font-size:13px">
+                <button type="submit" class="btn btn-primary btn-xs">Uložiť</button>
+                <button type="button" class="btn btn-outline btn-xs" onclick="zrusitEdit({{ k.id }})">Zrušiť</button>
+              </div>
+            </form>
+          </td>
           <td class="text-muted text-sm">{{ k.created_at.strftime('%d.%m.%Y') }}</td>
           <td class="td-center">{{ k.zaznamy|length }}</td>
           <td>
-            {% if k.aktivny %}
-              <span class="badge badge-green">Aktívny</span>
-            {% else %}
-              <span class="badge badge-gray">Archivovaný</span>
-            {% endif %}
+            {% if k.aktivny %}<span class="badge badge-green">Aktívny</span>
+            {% else %}<span class="badge badge-gray">Archivovaný</span>{% endif %}
           </td>
-          <td class="td-right">
-            <form method="POST" action="{{ url_for('archivovat_klienta', klient_id=k.id) }}" style="display:inline">
-              <button type="submit" class="btn btn-outline btn-xs">
-                {% if k.aktivny %}Archivovať{% else %}Aktivovať{% endif %}
-              </button>
-            </form>
+          <td>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-outline btn-xs" onclick="upravitKlienta({{ k.id }})">✏ Upraviť</button>
+              <form method="POST" action="{{ url_for('archivovat_klienta', klient_id=k.id) }}" style="display:inline">
+                <button type="submit" class="btn btn-outline btn-xs">
+                  {% if k.aktivny %}Archivovať{% else %}Aktivovať{% endif %}
+                </button>
+              </form>
+            </div>
           </td>
         </tr>
         {% endfor %}
@@ -78,4 +82,15 @@
   </div>
   {% endif %}
 </div>
+
+<script>
+function upravitKlienta(id) {
+  document.getElementById('nazov-' + id).style.display = 'none';
+  document.getElementById('edit-form-' + id).style.display = 'block';
+}
+function zrusitEdit(id) {
+  document.getElementById('nazov-' + id).style.display = '';
+  document.getElementById('edit-form-' + id).style.display = 'none';
+}
+</script>
 {% endblock %}
