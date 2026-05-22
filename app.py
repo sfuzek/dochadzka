@@ -13,9 +13,7 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dochadzka-dev-key-zmenit')
 database_url = os.environ.get('DATABASE_URL', 'sqlite:///dochadzka.db')
 if database_url.startswith('postgres://'):
-    database_url = database_url.replace('postgres://', 'postgresql+pg8000://', 1)
-elif database_url.startswith('postgresql://'):
-    database_url = database_url.replace('postgresql://', 'postgresql+pg8000://', 1)
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -28,7 +26,6 @@ login_manager.login_message = 'Pre prístup sa prosím prihláste.'
 login_manager.login_message_category = 'error'
 
 def now_sk():
-    """Aktuálny čas v slovenskom časovom pásme (UTC+2 leto, UTC+1 zima)."""
     return datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=2))).replace(tzinfo=None)
 
 @login_manager.user_loader
@@ -110,7 +107,6 @@ def dashboard():
     posledne = Zaznam.query.filter_by(user_id=current_user.id)\
                            .filter(Zaznam.cas_stop.isnot(None))\
                            .order_by(Zaznam.cas_start.desc()).limit(5).all()
-    # Úlohy pre mňa (neprebehnuté)
     moje_ulohy = Uloha.query.filter_by(prijimatel_id=current_user.id, hotovo=False)\
                              .order_by(Uloha.urgencia.desc(), Uloha.created_at.desc()).all()
     return render_template('dashboard.html', aktivny=aktivny, klienti=klienti,
@@ -126,7 +122,7 @@ def start_cas():
         flash('Máte aktívny časovač. Najprv ho zastavte.', 'error')
         return redirect(url_for('dashboard'))
     klient_id = request.form.get('klient_id')
-    klient = Klient.query.filter_by(id=klient_id, user_id=current_user.id).first()
+    klient = Klient.query.filter_by(id=int(klient_id), user_id=current_user.id).first()
     if not klient:
         flash('Vyberte platného klienta.', 'error')
         return redirect(url_for('dashboard'))
@@ -141,7 +137,7 @@ def start_cas():
 @login_required
 def stop_cas():
     zaznam_id = request.form.get('zaznam_id')
-    zaznam = Zaznam.query.filter_by(id=zaznam_id, user_id=current_user.id, cas_stop=None).first()
+    zaznam = Zaznam.query.filter_by(id=int(zaznam_id), user_id=current_user.id, cas_stop=None).first()
     if not zaznam:
         flash('Záznam nenájdený.', 'error')
         return redirect(url_for('dashboard'))
@@ -160,13 +156,13 @@ def stop_cas():
 @app.route('/cinnost/pridat', methods=['POST'])
 @login_required
 def pridat_cinnost():
-    zaznam_id  = request.form.get('zaznam_id')
-    popis      = request.form.get('popis', '').strip()
+    zaznam_id   = request.form.get('zaznam_id')
+    popis       = request.form.get('popis', '').strip()
     redirect_to = request.form.get('redirect', 'dashboard')
     if not popis:
         flash('Zadajte popis činnosti.', 'error')
         return redirect(url_for(redirect_to))
-    zaznam = Zaznam.query.filter_by(id=zaznam_id, user_id=current_user.id).first()
+    zaznam = Zaznam.query.filter_by(id=int(zaznam_id), user_id=current_user.id).first()
     if not zaznam:
         flash('Záznam nenájdený.', 'error')
         return redirect(url_for(redirect_to))
@@ -174,7 +170,6 @@ def pridat_cinnost():
     posledna = Cinnost.query.filter_by(zaznam_id=zaznam.id, cas_do=None).first()
     if posledna:
         posledna.cas_do = now
-    # Ak je záznam už ukončený, čas činnosti = teraz (len zápis)
     cinnost = Cinnost(
         zaznam_id=zaznam.id,
         popis=popis,
@@ -222,7 +217,7 @@ def pridat_klienta():
 @app.route('/klient/<int:klient_id>/upravit', methods=['POST'])
 @login_required
 def upravit_klienta(klient_id):
-    klient = Klient.query.filter_by(id=klient_id, user_id=current_user.id).first_or_404()
+    klient = Klient.query.filter_by(id=int(klient_id), user_id=current_user.id).first_or_404()
     novy_nazov = request.form.get('nazov', '').strip()
     if not novy_nazov:
         flash('Názov nemôže byť prázdny.', 'error')
@@ -235,7 +230,7 @@ def upravit_klienta(klient_id):
 @app.route('/klient/<int:klient_id>/archivovat', methods=['POST'])
 @login_required
 def archivovat_klienta(klient_id):
-    klient = Klient.query.filter_by(id=klient_id, user_id=current_user.id).first_or_404()
+    klient = Klient.query.filter_by(id=int(klient_id), user_id=current_user.id).first_or_404()
     klient.aktivny = not klient.aktivny
     db.session.commit()
     flash('Klient ' + ('aktivovaný.' if klient.aktivny else 'archivovaný.'), 'success')
@@ -355,13 +350,11 @@ def toggle_admin(user_id):
 @app.route('/ulohy')
 @login_required
 def ulohy():
-    # Úlohy ktoré som ja poslal
     odoslane = Uloha.query.filter_by(odosielatel_id=current_user.id)\
                           .order_by(Uloha.hotovo.asc(), Uloha.urgencia.desc(), Uloha.created_at.desc()).all()
-    # Úlohy pre mňa
-    prijate = Uloha.query.filter_by(prijimatel_id=current_user.id)\
-                         .order_by(Uloha.hotovo.asc(), Uloha.urgencia.desc(), Uloha.created_at.desc()).all()
-    users = User.query.filter(User.id != current_user.id).order_by(User.meno).all()
+    prijate  = Uloha.query.filter_by(prijimatel_id=current_user.id)\
+                          .order_by(Uloha.hotovo.asc(), Uloha.urgencia.desc(), Uloha.created_at.desc()).all()
+    users    = User.query.filter(User.id != current_user.id).order_by(User.meno).all()
     return render_template('ulohy.html', odoslane=odoslane, prijate=prijate, users=users)
 
 @app.route('/uloha/pridat', methods=['POST'])
@@ -393,7 +386,7 @@ def pridat_ulohu():
 @login_required
 def oznacit_hotovo(uloha_id):
     uloha = Uloha.query.filter_by(id=uloha_id, prijimatel_id=current_user.id).first_or_404()
-    uloha.hotovo = not uloha.hotovo
+    uloha.hotovo    = not uloha.hotovo
     uloha.hotovo_at = now_sk() if uloha.hotovo else None
     db.session.commit()
     return redirect(url_for('ulohy'))
@@ -405,12 +398,7 @@ def _build_excel(zaznamy, meno):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = 'Dochádzka'
-
-    navy  = '1E3A5F'
-    blue2 = '2E6DA4'
-    white = 'FFFFFF'
-    light = 'EEF4FB'
-
+    navy  = '1E3A5F'; blue2 = '2E6DA4'; white = 'FFFFFF'; light = 'EEF4FB'
     hdr_font = Font(bold=True, color=white, name='Calibri', size=11)
     hdr_fill = PatternFill('solid', start_color=navy)
     alt_fill = PatternFill('solid', start_color=light)
@@ -419,75 +407,65 @@ def _build_excel(zaznamy, meno):
     thin = lambda: Border(
         left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
         top=Side(style='thin', color='CCCCCC'),  bottom=Side(style='thin', color='CCCCCC'))
-
     ws.merge_cells('A1:I1')
     ws['A1'] = f'Výkaz dochádzky — {meno}'
     ws['A1'].font = Font(bold=True, size=15, color=navy, name='Calibri')
     ws['A1'].alignment = center
     ws.row_dimensions[1].height = 32
-
     ws.merge_cells('A2:I2')
     ws['A2'] = f'Exportované: {now_sk().strftime("%d.%m.%Y %H:%M")}'
     ws['A2'].font = Font(size=9, color='888888', name='Calibri')
     ws['A2'].alignment = center
     ws.row_dimensions[2].height = 15
-
-    cols   = ['Dátum', 'Klient', 'Začiatok', 'Koniec', 'Celkový čas', 'Činnosť', 'Od', 'Do', 'Poznámka']
-    widths = [14, 22, 11, 11, 13, 38, 11, 11, 28]
-    for ci, (h, w) in enumerate(zip(cols, widths), 1):
-        c = ws.cell(row=3, column=ci, value=h)
-        c.font = hdr_font; c.fill = hdr_fill; c.alignment = center; c.border = thin()
-        ws.column_dimensions[get_column_letter(ci)].width = w
-    ws.row_dimensions[3].height = 24
-
-    row = 4
-    for i, z in enumerate(zaznamy):
-        cinnosti = z.cinnosti if z.cinnosti else [None]
-        fill     = alt_fill if (i % 2 == 0) else PatternFill('solid', start_color=white)
-        for ji, cin in enumerate(cinnosti):
-            for ci in range(1, 10):
-                c = ws.cell(row=row, column=ci)
-                c.border = thin(); c.fill = fill; c.alignment = left
-                c.font = Font(name='Calibri', size=10)
-            if ji == 0:
-                ws.cell(row=row, column=1).value = z.datum.strftime('%d.%m.%Y') if z.datum else ''
-                ws.cell(row=row, column=1).alignment = center
-                ws.cell(row=row, column=2).value = z.klient.nazov if z.klient else ''
-                ws.cell(row=row, column=3).value = z.cas_start.strftime('%H:%M') if z.cas_start else ''
-                ws.cell(row=row, column=3).alignment = center
-                ws.cell(row=row, column=4).value = z.cas_stop.strftime('%H:%M') if z.cas_stop else ''
-                ws.cell(row=row, column=4).alignment = center
-                ws.cell(row=row, column=5).value = z.trvanie_format
-                ws.cell(row=row, column=5).alignment = center
-                ws.cell(row=row, column=5).font = Font(name='Calibri', size=10, bold=True)
-                ws.cell(row=row, column=9).value = z.poznamka or ''
+    cols   = ['Dátum','Klient','Začiatok','Koniec','Celkový čas','Činnosť','Od','Do','Poznámka']
+    widths = [14,22,11,11,13,38,11,11,28]
+    for ci,(h,w) in enumerate(zip(cols,widths),1):
+        c=ws.cell(row=3,column=ci,value=h); c.font=hdr_font; c.fill=hdr_fill
+        c.alignment=center; c.border=thin()
+        ws.column_dimensions[get_column_letter(ci)].width=w
+    ws.row_dimensions[3].height=24
+    row=4
+    for i,z in enumerate(zaznamy):
+        cinnosti=z.cinnosti if z.cinnosti else [None]
+        fill=alt_fill if (i%2==0) else PatternFill('solid',start_color=white)
+        for ji,cin in enumerate(cinnosti):
+            for ci in range(1,10):
+                c=ws.cell(row=row,column=ci); c.border=thin(); c.fill=fill
+                c.alignment=left; c.font=Font(name='Calibri',size=10)
+            if ji==0:
+                ws.cell(row=row,column=1).value=z.datum.strftime('%d.%m.%Y') if z.datum else ''
+                ws.cell(row=row,column=1).alignment=center
+                ws.cell(row=row,column=2).value=z.klient.nazov if z.klient else ''
+                ws.cell(row=row,column=3).value=z.cas_start.strftime('%H:%M') if z.cas_start else ''
+                ws.cell(row=row,column=3).alignment=center
+                ws.cell(row=row,column=4).value=z.cas_stop.strftime('%H:%M') if z.cas_stop else ''
+                ws.cell(row=row,column=4).alignment=center
+                ws.cell(row=row,column=5).value=z.trvanie_format
+                ws.cell(row=row,column=5).alignment=center
+                ws.cell(row=row,column=5).font=Font(name='Calibri',size=10,bold=True)
+                ws.cell(row=row,column=9).value=z.poznamka or ''
             if cin:
-                ws.cell(row=row, column=6).value = cin.popis
-                ws.cell(row=row, column=7).value = cin.cas_od.strftime('%H:%M') if cin.cas_od else ''
-                ws.cell(row=row, column=7).alignment = center
-                ws.cell(row=row, column=8).value = cin.cas_do.strftime('%H:%M') if cin.cas_do else ''
-                ws.cell(row=row, column=8).alignment = center
-            ws.row_dimensions[row].height = 18
-            row += 1
-
-    row += 1
-    celk_sek = sum(z.trvanie_sekundy or 0 for z in zaznamy)
-    celk_str = f'{celk_sek // 3600:02d}:{(celk_sek % 3600) // 60:02d}'
+                ws.cell(row=row,column=6).value=cin.popis
+                ws.cell(row=row,column=7).value=cin.cas_od.strftime('%H:%M') if cin.cas_od else ''
+                ws.cell(row=row,column=7).alignment=center
+                ws.cell(row=row,column=8).value=cin.cas_do.strftime('%H:%M') if cin.cas_do else ''
+                ws.cell(row=row,column=8).alignment=center
+            ws.row_dimensions[row].height=18; row+=1
+    row+=1
+    celk_sek=sum(z.trvanie_sekundy or 0 for z in zaznamy)
+    celk_str=f'{celk_sek//3600:02d}:{(celk_sek%3600)//60:02d}'
     ws.merge_cells(f'A{row}:D{row}')
-    ws.cell(row=row, column=1).value = 'CELKOVÝ ČAS:'
-    ws.cell(row=row, column=1).font  = Font(bold=True, name='Calibri', size=11, color=white)
-    ws.cell(row=row, column=1).fill  = PatternFill('solid', start_color=navy)
-    ws.cell(row=row, column=1).alignment = Alignment(horizontal='right', vertical='center')
-    ws.cell(row=row, column=5).value = celk_str
-    ws.cell(row=row, column=5).font  = Font(bold=True, name='Calibri', size=12, color=white)
-    ws.cell(row=row, column=5).fill  = PatternFill('solid', start_color=blue2)
-    ws.cell(row=row, column=5).alignment = center
-    ws.row_dimensions[row].height = 24
-    ws.freeze_panes = 'A4'
-
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
+    ws.cell(row=row,column=1).value='CELKOVÝ ČAS:'
+    ws.cell(row=row,column=1).font=Font(bold=True,name='Calibri',size=11,color=white)
+    ws.cell(row=row,column=1).fill=PatternFill('solid',start_color=navy)
+    ws.cell(row=row,column=1).alignment=Alignment(horizontal='right',vertical='center')
+    ws.cell(row=row,column=5).value=celk_str
+    ws.cell(row=row,column=5).font=Font(bold=True,name='Calibri',size=12,color=white)
+    ws.cell(row=row,column=5).fill=PatternFill('solid',start_color=blue2)
+    ws.cell(row=row,column=5).alignment=center
+    ws.row_dimensions[row].height=24
+    ws.freeze_panes='A4'
+    output=io.BytesIO(); wb.save(output); output.seek(0)
     return output
 
 
