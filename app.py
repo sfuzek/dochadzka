@@ -12,8 +12,12 @@ from openpyxl.utils import get_column_letter
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dochadzka-dev-key-zmenit')
 database_url = os.environ.get('DATABASE_URL', 'sqlite:///dochadzka.db')
-if database_url.startswith('postgres://'):
-    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+if 'postgresql' in database_url or database_url.startswith('postgres://'):
+    # Konvertuj na pg8000 dialekt (kompatibilný s Python 3.14)
+    database_url = database_url.replace('postgres://', 'postgresql+pg8000://')
+    database_url = database_url.replace('postgresql://', 'postgresql+pg8000://')
+    if 'pg8000' not in database_url:
+        database_url = database_url.replace('postgresql://', 'postgresql+pg8000://')
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -184,7 +188,7 @@ def pridat_cinnost():
 @app.route('/zaznam/<int:zaznam_id>/poznamka', methods=['POST'])
 @login_required
 def ulozit_poznamku(zaznam_id):
-    zaznam = Zaznam.query.filter_by(id=zaznam_id, user_id=current_user.id).first_or_404()
+    zaznam = Zaznam.query.filter_by(id=int(zaznam_id), user_id=current_user.id).first_or_404()
     zaznam.poznamka = request.form.get('poznamka', '').strip()
     db.session.commit()
     flash('Poznámka uložená.', 'success')
@@ -250,7 +254,7 @@ def _filter_zaznamy(user_id, datum_od, datum_do, klient_id):
             q = q.filter(Zaznam.datum <= datetime.strptime(datum_do, '%Y-%m-%d').date())
         except: pass
     if klient_id:
-        q = q.filter(Zaznam.klient_id == klient_id)
+        q = q.filter(Zaznam.klient_id == int(klient_id))
     return q
 
 @app.route('/vykaz')
@@ -385,7 +389,7 @@ def pridat_ulohu():
 @app.route('/uloha/<int:uloha_id>/hotovo', methods=['POST'])
 @login_required
 def oznacit_hotovo(uloha_id):
-    uloha = Uloha.query.filter_by(id=uloha_id, prijimatel_id=current_user.id).first_or_404()
+    uloha = Uloha.query.filter_by(id=int(uloha_id), prijimatel_id=current_user.id).first_or_404()
     uloha.hotovo    = not uloha.hotovo
     uloha.hotovo_at = now_sk() if uloha.hotovo else None
     db.session.commit()
