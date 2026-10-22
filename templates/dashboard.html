@@ -31,17 +31,15 @@
     Začiatok: {{ aktivny.cas_start.strftime('%H:%M') }} dňa {{ aktivny.cas_start.strftime('%d.%m.%Y') }}
   </div>
 
-  <form method="POST" action="{{ url_for('pridat_cinnost') }}" style="margin-top:18px"
-        onsubmit="return validateCinnost(this)" id="formCinnost">
-    <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
-    <input type="hidden" name="redirect" value="dashboard">
-    <!-- Typ činnosti -->
+  {# Jeden kombinovaný formulár: popis+typ → Rozdeliť ALEBO Zastaviť #}
+  <div style="margin-top:18px" id="formCinnostWrap">
+    <!-- Typ činnosti — spoločný pre Rozdeliť aj Zastaviť -->
     <div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;
                     background:rgba(255,255,255,0.12);border:1.5px solid rgba(255,255,255,0.25);
                     border-radius:8px;padding:7px 14px;font-size:13px;color:#fff;font-weight:500;
                     transition:all .15s;" id="labelBezna">
-        <input type="radio" name="typ" value="bezna" id="typBezna"
+        <input type="radio" name="typ_cinnost" value="bezna" id="typBezna"
                onchange="highlightTyp()"
                style="accent-color:#60A5FA;width:15px;height:15px;">
         🟦 Bežná práca
@@ -50,48 +48,45 @@
                     background:rgba(255,255,255,0.12);border:1.5px solid rgba(255,255,255,0.25);
                     border-radius:8px;padding:7px 14px;font-size:13px;color:#fff;font-weight:500;
                     transition:all .15s;" id="labelExtra">
-        <input type="radio" name="typ" value="extra" id="typExtra"
+        <input type="radio" name="typ_cinnost" value="extra" id="typExtra"
                onchange="highlightTyp()"
                style="accent-color:#FBBF24;width:15px;height:15px;">
         🟡 Extra práca
       </label>
     </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <input type="text" name="popis" id="popisCinnosti" placeholder="Popíšte činnosť (napr. analýza, fakturácia...)"
-             style="flex:1;min-width:200px;background:rgba(255,255,255,0.15);border-color:rgba(255,255,255,0.3);color:#fff;">
-      <button type="submit" class="btn" style="background:rgba(255,255,255,0.2);color:#fff;border:1.5px solid rgba(255,255,255,0.4)">
-        ✂ Rozdeliť / Pridať činnosť
-      </button>
-    </div>
-    <div id="chybaCinnosti" style="display:none;color:#FCA5A5;font-size:12px;margin-top:6px;">
-      ⚠ Vyplňte popis činnosti a vyberte typ (Bežná / Extra).
-    </div>
-  </form>
-
-  {# Stop formulár — žiadne radio buttony, popis sa zadáva cez Rozdeliť #}
-  <form method="POST" action="{{ url_for('stop_cas') }}" class="timer-actions"
-        onsubmit="return validateStop(this)">
-    <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
-    <div style="display:flex;gap:10px;flex:1;flex-wrap:wrap;margin-top:10px">
-      {% if not aktivny.cinnosti %}
-      <span style="font-size:12px;opacity:.7;align-self:center;">
-        💡 Najprv pridajte činnosť cez Rozdeliť, potom zastavte.
-      </span>
-      {% else %}
-      <input type="text" name="poznamka" placeholder="Záverečná poznámka (voliteľné)"
-             style="flex:1;min-width:180px;background:rgba(255,255,255,0.15);border-color:rgba(255,255,255,0.3);color:#fff;">
-      {% endif %}
-      <button type="submit" class="btn btn-danger btn-lg"
-              {% if not aktivny.cinnosti %}disabled style="opacity:.45;cursor:not-allowed"{% endif %}>
-        ⏹ Zastaviť prácu
-      </button>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <input type="text" id="popisCinnosti" placeholder="Popíšte činnosť (napr. analýza, fakturácia...)"
+             style="flex:1;min-width:200px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.3);
+                    border-radius:8px;padding:10px 13px;color:#fff;font-size:14px;font-family:inherit;">
+      <!-- Rozdeliť: zapíše činnosť a pokračuje -->
+      <form method="POST" action="{{ url_for('pridat_cinnost') }}" style="display:contents"
+            onsubmit="return prenesDoFormu(this,'rozdelit')">
+        <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
+        <input type="hidden" name="redirect" value="dashboard">
+        <input type="hidden" name="popis" id="hiddenPopis1">
+        <input type="hidden" name="typ" id="hiddenTyp1">
+        <button type="submit" class="btn"
+                style="background:rgba(255,255,255,0.2);color:#fff;border:1.5px solid rgba(255,255,255,0.4)">
+          ✂ Rozdeliť
+        </button>
+      </form>
+      <!-- Zastaviť: zapíše činnosť a zastaví časovač -->
+      <form method="POST" action="{{ url_for('stop_cas') }}" style="display:contents"
+            onsubmit="return prenesDoFormu(this,'stop')">
+        <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
+        <input type="hidden" name="popis_stop" id="hiddenPopis2">
+        <input type="hidden" name="typ" id="hiddenTyp2">
+        <button type="submit" class="btn btn-danger btn-lg">⏹ Zastaviť prácu</button>
+      </form>
       <button type="button" class="btn" onclick="toggleZmenitKlienta()"
               style="background:rgba(255,255,255,0.15);color:#fff;border:1.5px solid rgba(255,255,255,0.3)">
         🔄 Zmeniť klienta
       </button>
     </div>
-    <div id="chybaStop" style="display:none;color:#FCA5A5;font-size:12px;margin-top:6px;"></div>
-  </form>
+    <div id="chybaCinnosti" style="display:none;color:#FCA5A5;font-size:12px;margin-top:6px;">
+      ⚠ Vyplňte popis činnosti a vyberte typ (Bežná / Extra).
+    </div>
+  </div>
 
   <!-- Panel zmeny klienta -->
   <div id="panelZmenitKlienta" style="display:none;margin-top:12px;background:rgba(0,0,0,0.25);
@@ -279,27 +274,37 @@ function highlightTyp() {
   document.getElementById('labelBezna').style.background  = bezna.checked ? 'rgba(96,165,250,0.25)' : 'rgba(255,255,255,0.12)';
   document.getElementById('labelExtra').style.borderColor = extra.checked ? '#FBBF24' : 'rgba(255,255,255,0.25)';
   document.getElementById('labelExtra').style.background  = extra.checked ? 'rgba(251,191,36,0.2)' : 'rgba(255,255,255,0.12)';
+  // Reset červeného zvýraznenia chyby
+  document.getElementById('popisCinnosti').style.borderColor = 'rgba(255,255,255,0.3)';
 }
 
-function validateCinnost(form) {
-  const popis  = form.querySelector('[name="popis"]');
-  const typ    = form.querySelector('[name="typ"]:checked');
-  const chyba  = document.getElementById('chybaCinnosti');
-  if (!popis.value.trim() || !typ) {
+// Skopíruje popis+typ zo spoločných polí do hidden inputov pred odoslaním
+function prenesDoFormu(form, akcia) {
+  const popis = document.getElementById('popisCinnosti').value.trim();
+  const typEl = document.querySelector('[name="typ_cinnost"]:checked');
+  const chyba = document.getElementById('chybaCinnosti');
+
+  if (!popis || !typEl) {
     chyba.style.display = 'block';
-    if (!popis.value.trim()) { popis.style.borderColor = '#F87171'; popis.focus(); }
-    if (!typ) {
+    if (!popis) {
+      document.getElementById('popisCinnosti').style.borderColor = '#F87171';
+      document.getElementById('popisCinnosti').focus();
+    }
+    if (!typEl) {
       document.getElementById('labelBezna').style.borderColor = '#F87171';
       document.getElementById('labelExtra').style.borderColor = '#F87171';
     }
     return false;
   }
   chyba.style.display = 'none';
-  return true;
-}
 
-function validateStop(form) {
-  // Stop vždy povolený — popis sa zadáva cez Rozdeliť
+  if (akcia === 'rozdelit') {
+    document.getElementById('hiddenPopis1').value = popis;
+    document.getElementById('hiddenTyp1').value   = typEl.value;
+  } else {
+    document.getElementById('hiddenPopis2').value = popis;
+    document.getElementById('hiddenTyp2').value   = typEl.value;
+  }
   return true;
 }
 </script>
