@@ -186,17 +186,19 @@ def start_cas():
 @app.route('/zmenit-klienta', methods=['POST'])
 @login_required
 def zmenit_klienta():
-    zaznam_id = request.form.get('zaznam_id')
+    zaznam_id      = request.form.get('zaznam_id')
     novy_klient_id = request.form.get('novy_klient_id')
-    popis = request.form.get('popis', '').strip()
-    typ = request.form.get('typ', '').strip()
-    # Validácia
+    popis          = request.form.get('popis', '').strip()
+    typ            = request.form.get('typ', '').strip()
+
+    # Vyžaduje sa len popis a typ pre STARÉHO klienta (čo ste robili doteraz)
     if not popis:
-        flash('Vyplňte popis činnosti pred zmenou klienta.', 'error')
+        flash('Vyplňte popis činnosti pre aktuálneho klienta.', 'error')
         return redirect(url_for('dashboard'))
     if typ not in ('bezna', 'extra'):
-        flash('Vyberte typ činnosti (Bežná / Extra).', 'error')
+        flash('Vyberte typ činnosti pre aktuálneho klienta (Bežná / Extra).', 'error')
         return redirect(url_for('dashboard'))
+
     zaznam = Zaznam.query.filter_by(id=int(zaznam_id), user_id=current_user.id, cas_stop=None).first()
     novy_klient = Klient.query.filter_by(id=int(novy_klient_id)).first()
     if not zaznam or not novy_klient:
@@ -205,22 +207,28 @@ def zmenit_klienta():
     if novy_klient.id == zaznam.klient_id:
         flash('Vyberte iného klienta.', 'error')
         return redirect(url_for('dashboard'))
+
     now = now_sk()
-    # Uzavri poslednú činnosť
+
+    # Uzavri otvorenú činnosť starého klienta
     posledna = Cinnost.query.filter_by(zaznam_id=zaznam.id, cas_do=None).first()
     if posledna:
         posledna.cas_do = now
-    # Pridaj záverečnú činnosť pre aktuálny záznam
+
+    # Pridaj záverečnú činnosť pre starého klienta (čo ste robili)
     cinnost = Cinnost(zaznam_id=zaznam.id, popis=popis, typ=typ, cas_od=now, cas_do=now)
     db.session.add(cinnost)
-    # Stopni aktuálny záznam
+
+    # Stopni záznam starého klienta
     zaznam.cas_stop = now
-    # Spusti nový záznam pre nového klienta
+
+    # Spusti nový záznam pre nového klienta — BEZ požiadavky na popis/typ
+    # (ten sa vyplní až pri rozdelení alebo zastavení)
     novy_zaznam = Zaznam(user_id=current_user.id, klient_id=novy_klient.id,
                          datum=now.date(), cas_start=now)
     db.session.add(novy_zaznam)
     db.session.commit()
-    flash(f'Klient zmenený na {novy_klient.nazov} — časovač beží.', 'success')
+    flash(f'Prepnuté na {novy_klient.nazov} — časovač beží.', 'success')
     return redirect(url_for('dashboard'))
 
 @app.route('/stop', methods=['POST'])

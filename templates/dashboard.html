@@ -86,12 +86,16 @@
   <!-- Panel zmeny klienta -->
   <div id="panelZmenitKlienta" style="display:none;margin-top:12px;background:rgba(0,0,0,0.25);
        border-radius:10px;padding:14px;border:1px solid rgba(255,255,255,0.15)">
-    <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;">
-      🔄 Zmeniť klienta — dokončí aktuálnu prácu a spustí novú
+    <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">
+      🔄 Prepnúť na iného klienta
+    </div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:10px;">
+      Zadajte čo ste robili pre <strong style="color:rgba(255,255,255,0.8)">{{ aktivny.klient.nazov }}</strong> — potom vyberte nového klienta. Nový klient začne bez popisu, ten doplníte až pri zastavení alebo rozdelení.
     </div>
     <form method="POST" action="{{ url_for('zmenit_klienta') }}" onsubmit="return validateZmenaKlienta(this)">
       <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
-      <!-- Typ činnosti -->
+      <!-- Typ činnosti pre STARÉHO klienta -->
+      <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:6px;">Typ práce pre {{ aktivny.klient.nazov }}:</div>
       <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap">
         <label style="display:flex;align-items:center;gap:5px;cursor:pointer;
                       background:rgba(255,255,255,0.1);border:1.5px solid rgba(255,255,255,0.2);
@@ -110,11 +114,11 @@
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <input type="text" name="popis" id="popisZmena"
-               placeholder="Popis vykonanej činnosti (povinné)"
+               placeholder="Popis čo ste robili pre {{ aktivny.klient.nazov }} (povinné)"
                style="flex:2;min-width:180px;background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);color:#fff;font-size:13px;">
         <select name="novy_klient_id" id="novyKlient"
                 style="flex:1;min-width:140px;background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);color:#fff;font-size:13px;">
-          <option value="">— Nový klient —</option>
+          <option value="">— Prepnúť na klienta —</option>
           {% for k in klienti %}
           {% if k.id != aktivny.klient_id %}
           <option value="{{ k.id }}">{{ k.nazov }}</option>
@@ -124,7 +128,7 @@
         <button type="submit" class="btn btn-warning">🔄 Prepnúť</button>
       </div>
       <div id="chybaZmena" style="display:none;color:#FCA5A5;font-size:12px;margin-top:6px;">
-        ⚠ Vyplňte popis, vyberte typ a nového klienta.
+        ⚠ Vyplňte popis a vyberte typ pre {{ aktivny.klient.nazov }}, potom vyberte nového klienta.
       </div>
     </form>
   </div>
