@@ -41,6 +41,36 @@
     </div>
     {% endif %}
 
+    <hr style="margin:24px 0; border:none; border-top:1px solid var(--border);">
+
+    <h3 style="font-size:15px; font-weight:600; margin-bottom:6px;">🔄 Reset kód hesla</h3>
+    <p style="color:var(--muted); margin-bottom:14px; font-size:14px;">
+      Kód, ktorý použijú zamestnanci na stránke „Zabudnuté heslo" na obnovenie prístupu.
+      Zdieľajte ho iba dôveryhodným osobám.
+    </p>
+
+    <div class="form-group">
+      <label>Reset kód</label>
+      <input
+        type="text"
+        name="reset_kod"
+        value="{{ aktualny_reset }}"
+        placeholder="napr. FOXRESET2026 — alebo nechajte prázdne pre zakázanie resetu"
+        autocomplete="off"
+        style="font-family:monospace; font-size:15px; letter-spacing:1px;"
+      >
+    </div>
+
+    {% if aktualny_reset %}
+    <div style="background:#DCFCE7; border-left:4px solid #16A34A; padding:12px 16px; border-radius:6px; margin-bottom:16px; font-size:13px; color:#166534;">
+      <strong>✓ Aktuálny reset kód:</strong> <code style="background:#BBF7D0; padding:2px 8px; border-radius:4px; font-size:14px; letter-spacing:1px;">{{ aktualny_reset }}</code>
+    </div>
+    {% else %}
+    <div style="background:#FEF3C7; border-left:4px solid #D97706; padding:12px 16px; border-radius:6px; margin-bottom:16px; font-size:13px; color:#92400E;">
+      <strong>⚠ Reset kód nie je nastavený</strong> — zamestnanci si nemôžu obnoviť heslo
+    </div>
+    {% endif %}
+
     <button type="submit" class="btn btn-primary">💾 Uložiť nastavenia</button>
   </form>
 </div>
@@ -53,5 +83,37 @@
     Spravujte zamestnancov, priraďte alebo odoberte oprávnenia správcu.
   </p>
   <a href="{{ url_for('admin') }}" class="btn btn-outline">🛡 Prejsť na správu používateľov</a>
+</div>
+
+<div class="card" style="max-width:600px; margin-top:20px;">
+  <div class="card-header">
+    <h3>💾 Záloha databázy</h3>
+  </div>
+  <p style="color:var(--muted); margin-bottom:16px; font-size:14px;">
+    Stiahnite kompletnú zálohu celej databázy — všetkých používateľov, klientov, záznamov a nastavení.
+    Pri obnove sa <strong>všetky aktuálne dáta nahradia</strong> dátami zo zálohy.
+  </p>
+
+  <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start;">
+    <a href="{{ url_for('zaloha') }}" class="btn btn-success">⬇ Stiahnuť zálohu</a>
+
+    <form method="POST" action="{{ url_for('obnovit_zalohu') }}" enctype="multipart/form-data"
+          onsubmit="return confirm('⚠ POZOR: Toto prepíše všetky aktuálne dáta dátami zo zálohy. Pokračovať?')">
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <input type="file" name="zaloha_subor" accept=".xlsx" required
+               style="font-size:13px; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg);">
+        <button type="submit" class="btn btn-outline" style="color:#DC2626; border-color:#DC2626;">
+          ⬆ Obnoviť zo zálohy
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <div style="background:#FEF3C7; border-left:4px solid #D97706; padding:12px 16px; border-radius:6px; margin-top:16px; font-size:13px; color:#92400E;">
+    <strong>⚠ Dôležité upozornenie:</strong><br>
+    • Zálohu robte pravidelne — napr. raz týždenne<br>
+    • Záloha obsahuje <em>heslá (hashované), všetky pracovné záznamy a nastavenia</em><br>
+    • Obnova zálohy je <strong>nezvratná</strong> — pred obnovou si stiahnite aktuálnu zálohu
+  </div>
 </div>
 {% endblock %}

@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 import bcrypt
 import io
 import os
+import json
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -110,6 +111,39 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
+@app.route('/zabudnute-heslo', methods=['GET', 'POST'])
+def zabudnute_heslo():
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
+    if request.method == 'POST':
+        email      = request.form.get('email', '').strip().lower()
+        reset_kod  = request.form.get('reset_kod', '').strip()
+        heslo      = request.form.get('heslo', '')
+        heslo2     = request.form.get('heslo2', '')
+        # Validácia
+        ulozeny_kod = Nastavenie.get('reset_kod', '')
+        if not ulozeny_kod:
+            flash('Reset hesla nie je povolený. Kontaktujte správcu.', 'error')
+            return render_template('zabudnute_heslo.html')
+        if reset_kod != ulozeny_kod:
+            flash('Nesprávny reset kód.', 'error')
+            return render_template('zabudnute_heslo.html')
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            flash('Email nenájdený.', 'error')
+            return render_template('zabudnute_heslo.html')
+        if heslo != heslo2:
+            flash('Heslá sa nezhodujú.', 'error')
+            return render_template('zabudnute_heslo.html')
+        if len(heslo) < 6:
+            flash('Heslo musí mať aspoň 6 znakov.', 'error')
+            return render_template('zabudnute_heslo.html')
+        user.heslo = bcrypt.hashpw(heslo.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        db.session.commit()
+        flash('Heslo bolo zmenené. Prihláste sa.', 'success')
+        return redirect(url_for('login'))
+    return render_template('zabudnute_heslo.html')
+
 
 # ── DASHBOARD ─────────────────────────────────────────────────────────────────
 
@@ -149,6 +183,46 @@ def start_cas():
     flash(f'Časovač spustený — {klient.nazov}', 'success')
     return redirect(url_for('dashboard'))
 
+@app.route('/zmenit-klienta', methods=['POST'])
+@login_required
+def zmenit_klienta():
+    zaznam_id = request.form.get('zaznam_id')
+    novy_klient_id = request.form.get('novy_klient_id')
+    popis = request.form.get('popis', '').strip()
+    typ = request.form.get('typ', '').strip()
+    # Validácia
+    if not popis:
+        flash('Vyplňte popis činnosti pred zmenou klienta.', 'error')
+        return redirect(url_for('dashboard'))
+    if typ not in ('bezna', 'extra'):
+        flash('Vyberte typ činnosti (Bežná / Extra).', 'error')
+        return redirect(url_for('dashboard'))
+    zaznam = Zaznam.query.filter_by(id=int(zaznam_id), user_id=current_user.id, cas_stop=None).first()
+    novy_klient = Klient.query.filter_by(id=int(novy_klient_id), user_id=current_user.id).first()
+    if not zaznam or not novy_klient:
+        flash('Chyba — záznam alebo klient nenájdený.', 'error')
+        return redirect(url_for('dashboard'))
+    if novy_klient.id == zaznam.klient_id:
+        flash('Vyberte iného klienta.', 'error')
+        return redirect(url_for('dashboard'))
+    now = now_sk()
+    # Uzavri poslednú činnosť
+    posledna = Cinnost.query.filter_by(zaznam_id=zaznam.id, cas_do=None).first()
+    if posledna:
+        posledna.cas_do = now
+    # Pridaj záverečnú činnosť pre aktuálny záznam
+    cinnost = Cinnost(zaznam_id=zaznam.id, popis=popis, typ=typ, cas_od=now, cas_do=now)
+    db.session.add(cinnost)
+    # Stopni aktuálny záznam
+    zaznam.cas_stop = now
+    # Spusti nový záznam pre nového klienta
+    novy_zaznam = Zaznam(user_id=current_user.id, klient_id=novy_klient.id,
+                         datum=now.date(), cas_start=now)
+    db.session.add(novy_zaznam)
+    db.session.commit()
+    flash(f'Klient zmenený na {novy_klient.nazov} — časovač beží.', 'success')
+    return redirect(url_for('dashboard'))
+
 @app.route('/stop', methods=['POST'])
 @login_required
 def stop_cas():
@@ -174,9 +248,13 @@ def stop_cas():
 def pridat_cinnost():
     zaznam_id   = request.form.get('zaznam_id')
     popis       = request.form.get('popis', '').strip()
+    typ         = request.form.get('typ', '').strip()
     redirect_to = request.form.get('redirect', 'dashboard')
     if not popis:
         flash('Zadajte popis činnosti.', 'error')
+        return redirect(url_for(redirect_to))
+    if typ not in ('bezna', 'extra'):
+        flash('Vyberte typ činnosti (Bežná / Extra).', 'error')
         return redirect(url_for(redirect_to))
     zaznam = Zaznam.query.filter_by(id=int(zaznam_id), user_id=current_user.id).first()
     if not zaznam:
@@ -189,6 +267,7 @@ def pridat_cinnost():
     cinnost = Cinnost(
         zaznam_id=zaznam.id,
         popis=popis,
+        typ=typ,
         cas_od=now,
         cas_do=now if zaznam.cas_stop is not None else None
     )
@@ -370,12 +449,15 @@ def nastavenia():
         flash('Prístup zamietnutý. Nastavenia môže meniť iba správca.', 'error')
         return redirect(url_for('dashboard'))
     if request.method == 'POST':
-        reg_kod = request.form.get('reg_kod', '').strip()
+        reg_kod   = request.form.get('reg_kod', '').strip()
+        reset_kod = request.form.get('reset_kod', '').strip()
         Nastavenie.set('reg_kod', reg_kod)
+        Nastavenie.set('reset_kod', reset_kod)
         flash('Nastavenia boli uložené.', 'success')
         return redirect(url_for('nastavenia'))
-    aktualny_kod = Nastavenie.get('reg_kod', '')
-    return render_template('nastavenia.html', aktualny_kod=aktualny_kod)
+    aktualny_kod  = Nastavenie.get('reg_kod', '')
+    aktualny_reset = Nastavenie.get('reset_kod', '')
+    return render_template('nastavenia.html', aktualny_kod=aktualny_kod, aktualny_reset=aktualny_reset)
 
 
 # ── ÚLOHY ─────────────────────────────────────────────────────────────────────
@@ -450,8 +532,8 @@ def _build_excel(zaznamy, meno):
     ws['A2'].font = Font(size=9, color='888888', name='Calibri')
     ws['A2'].alignment = center
     ws.row_dimensions[2].height = 15
-    cols   = ['Dátum','Klient','Začiatok','Koniec','Celkový čas','Činnosť','Od','Do','Poznámka']
-    widths = [14,22,11,11,13,38,11,11,28]
+    cols   = ['Dátum','Klient','Začiatok','Koniec','Celkový čas','Typ','Činnosť','Od','Do','Poznámka']
+    widths = [14,22,11,11,13,12,36,11,11,28]
     for ci,(h,w) in enumerate(zip(cols,widths),1):
         c=ws.cell(row=3,column=ci,value=h); c.font=hdr_font; c.fill=hdr_fill
         c.alignment=center; c.border=thin()
@@ -476,13 +558,20 @@ def _build_excel(zaznamy, meno):
                 ws.cell(row=row,column=5).value=z.trvanie_format
                 ws.cell(row=row,column=5).alignment=center
                 ws.cell(row=row,column=5).font=Font(name='Calibri',size=10,bold=True)
-                ws.cell(row=row,column=9).value=z.poznamka or ''
+                ws.cell(row=row,column=10).value=z.poznamka or ''
             if cin:
-                ws.cell(row=row,column=6).value=cin.popis
-                ws.cell(row=row,column=7).value=cin.cas_od.strftime('%H:%M') if cin.cas_od else ''
-                ws.cell(row=row,column=7).alignment=center
-                ws.cell(row=row,column=8).value=cin.cas_do.strftime('%H:%M') if cin.cas_do else ''
+                typ_label = 'Extra' if getattr(cin,'typ','bezna') == 'extra' else 'Bežná'
+                typ_fill_color = 'FEF3C7' if getattr(cin,'typ','bezna') == 'extra' else 'DBEAFE'
+                typ_font_color = '92400E' if getattr(cin,'typ','bezna') == 'extra' else '1E40AF'
+                c6=ws.cell(row=row,column=6,value=typ_label)
+                c6.alignment=center
+                c6.fill=PatternFill('solid',start_color=typ_fill_color)
+                c6.font=Font(name='Calibri',size=10,bold=True,color=typ_font_color)
+                ws.cell(row=row,column=7).value=cin.popis
+                ws.cell(row=row,column=8).value=cin.cas_od.strftime('%H:%M') if cin.cas_od else ''
                 ws.cell(row=row,column=8).alignment=center
+                ws.cell(row=row,column=9).value=cin.cas_do.strftime('%H:%M') if cin.cas_do else ''
+                ws.cell(row=row,column=9).alignment=center
             ws.row_dimensions[row].height=18; row+=1
     row+=1
     celk_sek=sum(z.trvanie_sekundy or 0 for z in zaznamy)
@@ -496,10 +585,225 @@ def _build_excel(zaznamy, meno):
     ws.cell(row=row,column=5).font=Font(bold=True,name='Calibri',size=12,color=white)
     ws.cell(row=row,column=5).fill=PatternFill('solid',start_color=blue2)
     ws.cell(row=row,column=5).alignment=center
+    ws.merge_cells(f'F{row}:J{row}')
     ws.row_dimensions[row].height=24
     ws.freeze_panes='A4'
     output=io.BytesIO(); wb.save(output); output.seek(0)
     return output
+
+
+# ── ZÁLOHA / OBNOVENIE ────────────────────────────────────────────────────────
+
+@app.route('/nastavenia/zaloha')
+@login_required
+def zaloha():
+    if not current_user.is_admin:
+        flash('Prístup zamietnutý.', 'error')
+        return redirect(url_for('dashboard'))
+
+    wb = openpyxl.Workbook()
+    navy  = '1E3A5F'
+    white = 'FFFFFF'
+    hdr_font = Font(bold=True, color=white, name='Calibri', size=11)
+    hdr_fill = PatternFill('solid', start_color=navy)
+
+    def write_sheet(ws, headers, rows):
+        for col, h in enumerate(headers, 1):
+            c = ws.cell(row=1, column=col, value=h)
+            c.font = hdr_font
+            c.fill = hdr_fill
+            c.alignment = Alignment(horizontal='center', vertical='center')
+        for ri, row in enumerate(rows, 2):
+            for ci, val in enumerate(row, 1):
+                ws.cell(row=ri, column=ci, value=val)
+        for col in ws.columns:
+            max_len = max((len(str(c.value or '')) for c in col), default=8)
+            ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 4, 50)
+
+    # Sheet 1: Používatelia
+    ws_u = wb.active
+    ws_u.title = 'users'
+    users = User.query.order_by(User.id).all()
+    write_sheet(ws_u,
+        ['id', 'meno', 'email', 'heslo_hash', 'is_admin', 'created_at'],
+        [(u.id, u.meno, u.email, u.heslo, int(u.is_admin),
+          u.created_at.isoformat() if u.created_at else '') for u in users])
+
+    # Sheet 2: Klienti
+    ws_k = wb.create_sheet('klienti')
+    klienti = Klient.query.order_by(Klient.id).all()
+    write_sheet(ws_k,
+        ['id', 'nazov', 'user_id', 'aktivny', 'created_at'],
+        [(k.id, k.nazov, k.user_id, int(k.aktivny),
+          k.created_at.isoformat() if k.created_at else '') for k in klienti])
+
+    # Sheet 3: Záznamy
+    ws_z = wb.create_sheet('zaznamy')
+    zaznamy = Zaznam.query.order_by(Zaznam.id).all()
+    write_sheet(ws_z,
+        ['id', 'user_id', 'klient_id', 'datum', 'cas_start', 'cas_stop', 'poznamka'],
+        [(z.id, z.user_id, z.klient_id,
+          z.datum.isoformat() if z.datum else '',
+          z.cas_start.isoformat() if z.cas_start else '',
+          z.cas_stop.isoformat() if z.cas_stop else '',
+          z.poznamka or '') for z in zaznamy])
+
+    # Sheet 4: Činnosti
+    ws_c = wb.create_sheet('cinnosti')
+    cinnosti = Cinnost.query.order_by(Cinnost.id).all()
+    write_sheet(ws_c,
+        ['id', 'zaznam_id', 'popis', 'typ', 'cas_od', 'cas_do'],
+        [(c.id, c.zaznam_id, c.popis, c.typ,
+          c.cas_od.isoformat() if c.cas_od else '',
+          c.cas_do.isoformat() if c.cas_do else '') for c in cinnosti])
+
+    # Sheet 5: Úlohy
+    ws_ul = wb.create_sheet('ulohy')
+    ulohy = Uloha.query.order_by(Uloha.id).all()
+    write_sheet(ws_ul,
+        ['id', 'odosielatel_id', 'prijimatel_id', 'text', 'urgencia', 'hotovo', 'hotovo_at', 'created_at'],
+        [(u.id, u.odosielatel_id, u.prijimatel_id, u.text, u.urgencia,
+          int(u.hotovo),
+          u.hotovo_at.isoformat() if u.hotovo_at else '',
+          u.created_at.isoformat() if u.created_at else '') for u in ulohy])
+
+    # Sheet 6: Nastavenia
+    ws_n = wb.create_sheet('nastavenia')
+    nastavenia_rows = Nastavenie.query.order_by(Nastavenie.id).all()
+    write_sheet(ws_n,
+        ['id', 'kluc', 'hodnota'],
+        [(n.id, n.kluc, n.hodnota) for n in nastavenia_rows])
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    filename = f'zaloha_dochadzka_{now_sk().strftime("%Y%m%d_%H%M")}.xlsx'
+    return send_file(output, as_attachment=True, download_name=filename,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.route('/nastavenia/obnovit', methods=['POST'])
+@login_required
+def obnovit_zalohu():
+    if not current_user.is_admin:
+        flash('Prístup zamietnutý.', 'error')
+        return redirect(url_for('dashboard'))
+
+    subor = request.files.get('zaloha_subor')
+    if not subor or not subor.filename.endswith('.xlsx'):
+        flash('Vyberte platný .xlsx súbor zálohy.', 'error')
+        return redirect(url_for('nastavenia'))
+
+    try:
+        wb = openpyxl.load_workbook(subor, read_only=True, data_only=True)
+        required = {'users', 'klienti', 'zaznamy', 'cinnosti', 'ulohy', 'nastavenia'}
+        if not required.issubset(set(wb.sheetnames)):
+            flash('Súbor nie je platná záloha — chýbajú listy.', 'error')
+            return redirect(url_for('nastavenia'))
+
+        def rows_of(sheet_name):
+            ws = wb[sheet_name]
+            rows = list(ws.iter_rows(values_only=True))
+            if len(rows) < 1:
+                return []
+            return rows[1:]  # preskočiť hlavičku
+
+        def parse_dt(val):
+            if not val:
+                return None
+            if isinstance(val, datetime):
+                return val.replace(tzinfo=None)
+            try:
+                return datetime.fromisoformat(str(val))
+            except Exception:
+                return None
+
+        def parse_date(val):
+            if not val:
+                return None
+            from datetime import date
+            if isinstance(val, date):
+                return val
+            try:
+                return datetime.fromisoformat(str(val)).date()
+            except Exception:
+                return None
+
+        # Vymaž všetko v správnom poradí (FK závislosti)
+        Cinnost.query.delete()
+        Uloha.query.delete()
+        Zaznam.query.delete()
+        Klient.query.delete()
+        Nastavenie.query.delete()
+        User.query.delete()
+        db.session.flush()
+
+        # Obnov používateľov
+        for row in rows_of('users'):
+            if not row[0]:
+                continue
+            u = User(id=int(row[0]), meno=str(row[1] or ''), email=str(row[2] or ''),
+                     heslo=str(row[3] or ''), is_admin=bool(int(row[4] or 0)),
+                     created_at=parse_dt(row[5]) or now_sk())
+            db.session.add(u)
+        db.session.flush()
+
+        # Obnov klientov
+        for row in rows_of('klienti'):
+            if not row[0]:
+                continue
+            k = Klient(id=int(row[0]), nazov=str(row[1] or ''), user_id=int(row[2] or 0),
+                       aktivny=bool(int(row[3] or 1)),
+                       created_at=parse_dt(row[4]) or now_sk())
+            db.session.add(k)
+        db.session.flush()
+
+        # Obnov záznamy
+        for row in rows_of('zaznamy'):
+            if not row[0]:
+                continue
+            z = Zaznam(id=int(row[0]), user_id=int(row[1] or 0), klient_id=int(row[2] or 0),
+                       datum=parse_date(row[3]), cas_start=parse_dt(row[4]),
+                       cas_stop=parse_dt(row[5]), poznamka=str(row[6] or ''))
+            db.session.add(z)
+        db.session.flush()
+
+        # Obnov činnosti
+        for row in rows_of('cinnosti'):
+            if not row[0]:
+                continue
+            c = Cinnost(id=int(row[0]), zaznam_id=int(row[1] or 0),
+                        popis=str(row[2] or ''), typ=str(row[3] or 'bezna'),
+                        cas_od=parse_dt(row[4]), cas_do=parse_dt(row[5]))
+            db.session.add(c)
+        db.session.flush()
+
+        # Obnov úlohy
+        for row in rows_of('ulohy'):
+            if not row[0]:
+                continue
+            ul = Uloha(id=int(row[0]), odosielatel_id=int(row[1] or 0),
+                       prijimatel_id=int(row[2] or 0), text=str(row[3] or ''),
+                       urgencia=int(row[4] or 2), hotovo=bool(int(row[5] or 0)),
+                       hotovo_at=parse_dt(row[6]), created_at=parse_dt(row[7]) or now_sk())
+            db.session.add(ul)
+        db.session.flush()
+
+        # Obnov nastavenia
+        for row in rows_of('nastavenia'):
+            if not row[0]:
+                continue
+            n = Nastavenie(id=int(row[0]), kluc=str(row[1] or ''), hodnota=str(row[2] or ''))
+            db.session.add(n)
+
+        db.session.commit()
+        flash('✅ Záloha bola úspešne obnovená. Všetky dáta sú obnovené.', 'success')
+
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Chyba pri obnove zálohy: {str(e)}', 'error')
+
+    return redirect(url_for('nastavenia'))
 
 
 if __name__ == '__main__':
