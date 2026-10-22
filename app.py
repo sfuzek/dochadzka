@@ -152,7 +152,7 @@ def zabudnute_heslo():
 def dashboard():
     aktivny = Zaznam.query.filter_by(user_id=current_user.id, cas_stop=None)\
                           .order_by(Zaznam.cas_start.desc()).first()
-    klienti = Klient.query.filter_by(user_id=current_user.id, aktivny=True)\
+    klienti = Klient.query.filter_by(aktivny=True)\
                           .order_by(Klient.nazov).all()
     posledne = Zaznam.query.filter_by(user_id=current_user.id)\
                            .filter(Zaznam.cas_stop.isnot(None))\
@@ -172,7 +172,7 @@ def start_cas():
         flash('Máte aktívny časovač. Najprv ho zastavte.', 'error')
         return redirect(url_for('dashboard'))
     klient_id = request.form.get('klient_id')
-    klient = Klient.query.filter_by(id=int(klient_id), user_id=current_user.id).first()
+    klient = Klient.query.filter_by(id=int(klient_id)).first()
     if not klient:
         flash('Vyberte platného klienta.', 'error')
         return redirect(url_for('dashboard'))
@@ -198,7 +198,7 @@ def zmenit_klienta():
         flash('Vyberte typ činnosti (Bežná / Extra).', 'error')
         return redirect(url_for('dashboard'))
     zaznam = Zaznam.query.filter_by(id=int(zaznam_id), user_id=current_user.id, cas_stop=None).first()
-    novy_klient = Klient.query.filter_by(id=int(novy_klient_id), user_id=current_user.id).first()
+    novy_klient = Klient.query.filter_by(id=int(novy_klient_id)).first()
     if not zaznam or not novy_klient:
         flash('Chyba — záznam alebo klient nenájdený.', 'error')
         return redirect(url_for('dashboard'))
@@ -291,7 +291,7 @@ def ulozit_poznamku(zaznam_id):
 @app.route('/klienti')
 @login_required
 def klienti():
-    zoznam = Klient.query.filter_by(user_id=current_user.id).order_by(Klient.nazov).all()
+    zoznam = Klient.query.order_by(Klient.nazov).all()
     return render_template('klienti.html', klienti=zoznam)
 
 @app.route('/klient/pridat', methods=['POST'])
@@ -301,7 +301,7 @@ def pridat_klienta():
     if not nazov:
         flash('Zadajte názov klienta.', 'error')
         return redirect(url_for('klienti'))
-    if Klient.query.filter_by(user_id=current_user.id, nazov=nazov).first():
+    if Klient.query.filter_by(nazov=nazov).first():
         flash('Klient s týmto názvom už existuje.', 'error')
         return redirect(url_for('klienti'))
     db.session.add(Klient(nazov=nazov, user_id=current_user.id))
@@ -312,7 +312,7 @@ def pridat_klienta():
 @app.route('/klient/<int:klient_id>/upravit', methods=['POST'])
 @login_required
 def upravit_klienta(klient_id):
-    klient = Klient.query.filter_by(id=int(klient_id), user_id=current_user.id).first_or_404()
+    klient = Klient.query.get_or_404(klient_id)
     novy_nazov = request.form.get('nazov', '').strip()
     if not novy_nazov:
         flash('Názov nemôže byť prázdny.', 'error')
@@ -325,7 +325,7 @@ def upravit_klienta(klient_id):
 @app.route('/klient/<int:klient_id>/archivovat', methods=['POST'])
 @login_required
 def archivovat_klienta(klient_id):
-    klient = Klient.query.filter_by(id=int(klient_id), user_id=current_user.id).first_or_404()
+    klient = Klient.query.get_or_404(klient_id)
     klient.aktivny = not klient.aktivny
     db.session.commit()
     flash('Klient ' + ('aktivovaný.' if klient.aktivny else 'archivovaný.'), 'success')
@@ -356,7 +356,7 @@ def vykaz():
     klient_id = request.args.get('klient_id', '')
     zaznamy   = _filter_zaznamy(current_user.id, datum_od, datum_do, klient_id)\
                     .order_by(Zaznam.datum.desc(), Zaznam.cas_start.desc()).all()
-    klienti   = Klient.query.filter_by(user_id=current_user.id).order_by(Klient.nazov).all()
+    klienti   = Klient.query.order_by(Klient.nazov).all()
     celk_sek  = sum(z.trvanie_sekundy or 0 for z in zaznamy)
     celkovy   = f'{celk_sek // 3600:02d}:{(celk_sek % 3600) // 60:02d}'
     return render_template('vykaz.html', zaznamy=zaznamy, klienti=klienti,
@@ -400,7 +400,7 @@ def admin_vykaz(user_id):
     klient_id = request.args.get('klient_id', '')
     zaznamy   = _filter_zaznamy(user_id, datum_od, datum_do, klient_id)\
                     .order_by(Zaznam.datum.desc(), Zaznam.cas_start.desc()).all()
-    klienti   = Klient.query.filter_by(user_id=user_id).order_by(Klient.nazov).all()
+    klienti   = Klient.query.order_by(Klient.nazov).all()
     celk_sek  = sum(z.trvanie_sekundy or 0 for z in zaznamy)
     celkovy   = f'{celk_sek // 3600:02d}:{(celk_sek % 3600) // 60:02d}'
     return render_template('admin_vykaz.html', zamestnanec=user, zaznamy=zaznamy,
