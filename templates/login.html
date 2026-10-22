@@ -32,6 +32,9 @@
     <div class="auth-footer">
       Nemáte účet? <a href="{{ url_for('registracia') }}">Zaregistrujte sa</a>
     </div>
+    <div class="auth-footer" style="margin-top:8px">
+      <a href="{{ url_for('zabudnute_heslo') }}" style="color:var(--muted); font-size:12px;">Zabudnuté heslo?</a>
+    </div>
   </div>
 </div>
 {% endblock %}

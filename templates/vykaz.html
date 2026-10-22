@@ -78,7 +78,12 @@
               <div style="margin-top:6px">
                 {% for c in z.cinnosti %}
                 <div class="cinnost-item" style="font-size:12px">
-                  <span>📌 {{ c.popis }}</span>
+                  {% if c.typ == 'extra' %}
+                  <span class="badge badge-orange" style="font-size:10px;padding:2px 6px">🟡 Extra</span>
+                  {% else %}
+                  <span class="badge badge-blue" style="font-size:10px;padding:2px 6px">🟦 Bežná</span>
+                  {% endif %}
+                  <span>{{ c.popis }}</span>
                   <span class="cinnost-time">{{ c.cas_od.strftime('%H:%M') }} – {% if c.cas_do %}{{ c.cas_do.strftime('%H:%M') }}{% else %}—{% endif %} ({{ c.trvanie_format }})</span>
                 </div>
                 {% endfor %}
@@ -91,8 +96,14 @@
               <form method="POST" action="{{ url_for('pridat_cinnost') }}" style="margin-top:6px">
                 <input type="hidden" name="zaznam_id" value="{{ z.id }}">
                 <input type="hidden" name="redirect" value="vykaz">
-                <div style="display:flex;gap:6px">
-                  <input type="text" name="popis" placeholder="Popis činnosti" style="flex:1;font-size:12px;padding:5px 8px">
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                  <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+                    <input type="radio" name="typ" value="bezna" checked> 🟦 Bežná
+                  </label>
+                  <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+                    <input type="radio" name="typ" value="extra"> 🟡 Extra
+                  </label>
+                  <input type="text" name="popis" placeholder="Popis činnosti" style="flex:1;font-size:12px;padding:5px 8px;min-width:120px">
                   <button type="submit" class="btn btn-primary btn-xs">Pridať</button>
                 </div>
               </form>

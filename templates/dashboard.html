@@ -31,26 +31,103 @@
     Začiatok: {{ aktivny.cas_start.strftime('%H:%M') }} dňa {{ aktivny.cas_start.strftime('%d.%m.%Y') }}
   </div>
 
-  <form method="POST" action="{{ url_for('pridat_cinnost') }}" style="margin-top:18px">
+  <form method="POST" action="{{ url_for('pridat_cinnost') }}" style="margin-top:18px"
+        onsubmit="return validateCinnost(this)" id="formCinnost">
     <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
     <input type="hidden" name="redirect" value="dashboard">
+    <!-- Typ činnosti -->
+    <div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;
+                    background:rgba(255,255,255,0.12);border:1.5px solid rgba(255,255,255,0.25);
+                    border-radius:8px;padding:7px 14px;font-size:13px;color:#fff;font-weight:500;
+                    transition:all .15s;" id="labelBezna">
+        <input type="radio" name="typ" value="bezna" id="typBezna"
+               onchange="highlightTyp()"
+               style="accent-color:#60A5FA;width:15px;height:15px;">
+        🟦 Bežná práca
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;
+                    background:rgba(255,255,255,0.12);border:1.5px solid rgba(255,255,255,0.25);
+                    border-radius:8px;padding:7px 14px;font-size:13px;color:#fff;font-weight:500;
+                    transition:all .15s;" id="labelExtra">
+        <input type="radio" name="typ" value="extra" id="typExtra"
+               onchange="highlightTyp()"
+               style="accent-color:#FBBF24;width:15px;height:15px;">
+        🟡 Extra práca
+      </label>
+    </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <input type="text" name="popis" placeholder="Popíšte činnosť (napr. analýza, fakturácia...)"
+      <input type="text" name="popis" id="popisCinnosti" placeholder="Popíšte činnosť (napr. analýza, fakturácia...)"
              style="flex:1;min-width:200px;background:rgba(255,255,255,0.15);border-color:rgba(255,255,255,0.3);color:#fff;">
       <button type="submit" class="btn" style="background:rgba(255,255,255,0.2);color:#fff;border:1.5px solid rgba(255,255,255,0.4)">
         ✂ Rozdeliť / Pridať činnosť
       </button>
     </div>
+    <div id="chybaCinnosti" style="display:none;color:#FCA5A5;font-size:12px;margin-top:6px;">
+      ⚠ Vyplňte popis činnosti a vyberte typ (Bežná / Extra).
+    </div>
   </form>
 
-  <form method="POST" action="{{ url_for('stop_cas') }}" class="timer-actions">
+  <form method="POST" action="{{ url_for('stop_cas') }}" class="timer-actions"
+        onsubmit="return validateStop(this)">
     <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
     <div style="display:flex;gap:10px;flex:1;flex-wrap:wrap">
       <input type="text" name="poznamka" placeholder="Záverečná poznámka (voliteľné)"
              style="flex:1;min-width:180px;background:rgba(255,255,255,0.15);border-color:rgba(255,255,255,0.3);color:#fff;">
       <button type="submit" class="btn btn-danger btn-lg">⏹ Zastaviť prácu</button>
+      <button type="button" class="btn" onclick="toggleZmenitKlienta()"
+              style="background:rgba(255,255,255,0.15);color:#fff;border:1.5px solid rgba(255,255,255,0.3)">
+        🔄 Zmeniť klienta
+      </button>
     </div>
+    <div id="chybaStop" style="display:none;color:#FCA5A5;font-size:12px;margin-top:6px;"></div>
   </form>
+
+  <!-- Panel zmeny klienta -->
+  <div id="panelZmenitKlienta" style="display:none;margin-top:12px;background:rgba(0,0,0,0.25);
+       border-radius:10px;padding:14px;border:1px solid rgba(255,255,255,0.15)">
+    <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;">
+      🔄 Zmeniť klienta — dokončí aktuálnu prácu a spustí novú
+    </div>
+    <form method="POST" action="{{ url_for('zmenit_klienta') }}" onsubmit="return validateZmenaKlienta(this)">
+      <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
+      <!-- Typ činnosti -->
+      <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;
+                      background:rgba(255,255,255,0.1);border:1.5px solid rgba(255,255,255,0.2);
+                      border-radius:7px;padding:6px 12px;font-size:12px;color:#fff;" id="labelZBezna">
+          <input type="radio" name="typ" value="bezna" id="typZBezna" onchange="highlightZTyp()"
+                 style="accent-color:#60A5FA;width:14px;height:14px;">
+          🟦 Bežná práca
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;
+                      background:rgba(255,255,255,0.1);border:1.5px solid rgba(255,255,255,0.2);
+                      border-radius:7px;padding:6px 12px;font-size:12px;color:#fff;" id="labelZExtra">
+          <input type="radio" name="typ" value="extra" id="typZExtra" onchange="highlightZTyp()"
+                 style="accent-color:#FBBF24;width:14px;height:14px;">
+          🟡 Extra práca
+        </label>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input type="text" name="popis" id="popisZmena"
+               placeholder="Popis vykonanej činnosti (povinné)"
+               style="flex:2;min-width:180px;background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);color:#fff;font-size:13px;">
+        <select name="novy_klient_id" id="novyKlient"
+                style="flex:1;min-width:140px;background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);color:#fff;font-size:13px;">
+          <option value="">— Nový klient —</option>
+          {% for k in klienti %}
+          {% if k.id != aktivny.klient_id %}
+          <option value="{{ k.id }}">{{ k.nazov }}</option>
+          {% endif %}
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-warning">🔄 Prepnúť</button>
+      </div>
+      <div id="chybaZmena" style="display:none;color:#FCA5A5;font-size:12px;margin-top:6px;">
+        ⚠ Vyplňte popis, vyberte typ a nového klienta.
+      </div>
+    </form>
+  </div>
 </div>
 
 {% if aktivny.cinnosti %}
@@ -153,5 +230,97 @@ function updateTimer() {
 updateTimer();
 setInterval(updateTimer, 1000);
 {% endif %}
+
+function toggleZmenitKlienta() {
+  const panel = document.getElementById('panelZmenitKlienta');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function highlightZTyp() {
+  const bezna = document.getElementById('typZBezna');
+  const extra = document.getElementById('typZExtra');
+  document.getElementById('labelZBezna').style.borderColor = bezna.checked ? '#60A5FA' : 'rgba(255,255,255,0.2)';
+  document.getElementById('labelZBezna').style.background  = bezna.checked ? 'rgba(96,165,250,0.2)' : 'rgba(255,255,255,0.1)';
+  document.getElementById('labelZExtra').style.borderColor = extra.checked ? '#FBBF24' : 'rgba(255,255,255,0.2)';
+  document.getElementById('labelZExtra').style.background  = extra.checked ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.1)';
+}
+
+function validateZmenaKlienta(form) {
+  const popis  = form.querySelector('[name="popis"]');
+  const typ    = form.querySelector('[name="typ"]:checked');
+  const klient = form.querySelector('[name="novy_klient_id"]');
+  const chyba  = document.getElementById('chybaZmena');
+  if (!popis.value.trim() || !typ || !klient.value) {
+    chyba.style.display = 'block';
+    return false;
+  }
+  chyba.style.display = 'none';
+  return true;
+}
+
+function highlightTyp() {
+  const bezna = document.getElementById('typBezna');
+  const extra = document.getElementById('typExtra');
+  document.getElementById('labelBezna').style.borderColor = bezna.checked ? '#60A5FA' : 'rgba(255,255,255,0.25)';
+  document.getElementById('labelBezna').style.background  = bezna.checked ? 'rgba(96,165,250,0.25)' : 'rgba(255,255,255,0.12)';
+  document.getElementById('labelExtra').style.borderColor = extra.checked ? '#FBBF24' : 'rgba(255,255,255,0.25)';
+  document.getElementById('labelExtra').style.background  = extra.checked ? 'rgba(251,191,36,0.2)' : 'rgba(255,255,255,0.12)';
+}
+
+function validateCinnost(form) {
+  const popis  = form.querySelector('[name="popis"]');
+  const typ    = form.querySelector('[name="typ"]:checked');
+  const chyba  = document.getElementById('chybaCinnosti');
+  if (!popis.value.trim() || !typ) {
+    chyba.style.display = 'block';
+    if (!popis.value.trim()) { popis.style.borderColor = '#F87171'; popis.focus(); }
+    if (!typ) {
+      document.getElementById('labelBezna').style.borderColor = '#F87171';
+      document.getElementById('labelExtra').style.borderColor = '#F87171';
+    }
+    return false;
+  }
+  chyba.style.display = 'none';
+  return true;
+}
+
+function validateStop(form) {
+  const popis = document.getElementById('popisCinnosti');
+  const chyba = document.getElementById('chybaStop');
+  {% if not aktivny.cinnosti %}
+  // Žiadna činnosť ešte nebola pridaná
+  if (popis && !popis.value.trim()) {
+    chyba.style.display = 'block';
+    chyba.textContent = '⚠ Najprv pridajte aspoň jednu činnosť (s typom Bežná/Extra).';
+    popis.style.borderColor = '#F87171';
+    popis.focus();
+    return false;
+  }
+  // Popis vyplnený ale typ nevybraný
+  const typ = document.querySelector('[name="typ"]:checked');
+  if (popis && popis.value.trim() && !typ) {
+    chyba.style.display = 'block';
+    chyba.textContent = '⚠ Vyberte typ činnosti (Bežná / Extra) a kliknite Rozdeliť.';
+    return false;
+  }
+  // Popis vyplnený a typ vybraný — treba najprv odoslať činnosť
+  if (popis && popis.value.trim() && typ) {
+    chyba.style.display = 'block';
+    chyba.textContent = '⚠ Najprv kliknite "Rozdeliť / Pridať činnosť" pred zastavením.';
+    return false;
+  }
+  {% else %}
+  // Už existujú činnosti — ak je v poli text, treba ho najprv odoslať
+  if (popis && popis.value.trim()) {
+    chyba.style.display = 'block';
+    chyba.textContent = '⚠ Máte nevyplnenú činnosť. Najprv kliknite "Rozdeliť / Pridať činnosť".';
+    popis.style.borderColor = '#F87171';
+    popis.focus();
+    return false;
+  }
+  {% endif %}
+  chyba.style.display = 'none';
+  return true;
+}
 </script>
 {% endblock %}

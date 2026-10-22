@@ -62,6 +62,7 @@ class Cinnost(db.Model):
     id        = db.Column(db.Integer, primary_key=True)
     zaznam_id = db.Column(db.Integer, db.ForeignKey('zaznamy.id'), nullable=False)
     popis     = db.Column(db.Text, nullable=False)
+    typ       = db.Column(db.String(20), nullable=False, default='bezna')  # 'bezna' alebo 'extra'
     cas_od    = db.Column(db.DateTime, nullable=False)
     cas_do    = db.Column(db.DateTime, nullable=True)
 
