@@ -240,10 +240,26 @@ def stop_cas():
         flash('Záznam nenájdený.', 'error')
         return redirect(url_for('dashboard'))
     now = now_sk()
+
+    # Ak prišiel popis_stop (zastavenie bez predchádzajúcej činnosti)
+    popis_stop = request.form.get('popis_stop', '').strip()
+    typ_stop   = request.form.get('typ', '').strip()
+    if popis_stop and typ_stop in ('bezna', 'extra'):
+        # Uzavri prípadnú otvorenú činnosť
+        posledna = Cinnost.query.filter_by(zaznam_id=zaznam.id, cas_do=None).first()
+        if posledna:
+            posledna.cas_do = now
+        # Pridaj novú činnosť
+        cinnost = Cinnost(zaznam_id=zaznam.id, popis=popis_stop, typ=typ_stop,
+                          cas_od=zaznam.cas_start, cas_do=now)
+        db.session.add(cinnost)
+    else:
+        # Uzavri poslednú otvorenú činnosť
+        posledna = Cinnost.query.filter_by(zaznam_id=zaznam.id, cas_do=None).first()
+        if posledna:
+            posledna.cas_do = now
+
     zaznam.cas_stop = now
-    posledna = Cinnost.query.filter_by(zaznam_id=zaznam.id, cas_do=None).first()
-    if posledna:
-        posledna.cas_do = now
     poznamka = request.form.get('poznamka', '').strip()
     if poznamka:
         zaznam.poznamka = poznamka

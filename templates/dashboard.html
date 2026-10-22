@@ -71,6 +71,34 @@
   <form method="POST" action="{{ url_for('stop_cas') }}" class="timer-actions"
         onsubmit="return validateStop(this)">
     <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
+    <!-- Typ pre zastavenie (ak ešte nebola žiadna činnosť, alebo sa chce pridať posledná) -->
+    {% if not aktivny.cinnosti %}
+    <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap" id="stopTypWrap">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;
+                    background:rgba(255,255,255,0.12);border:1.5px solid rgba(255,255,255,0.25);
+                    border-radius:8px;padding:7px 14px;font-size:13px;color:#fff;font-weight:500;" id="labelStopBezna">
+        <input type="radio" name="typ" value="bezna" id="typStopBezna" onchange="highlightStopTyp()"
+               style="accent-color:#60A5FA;width:15px;height:15px;">
+        🟦 Bežná práca
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;
+                    background:rgba(255,255,255,0.12);border:1.5px solid rgba(255,255,255,0.25);
+                    border-radius:8px;padding:7px 14px;font-size:13px;color:#fff;font-weight:500;" id="labelStopExtra">
+        <input type="radio" name="typ" value="extra" id="typStopExtra" onchange="highlightStopTyp()"
+               style="accent-color:#FBBF24;width:15px;height:15px;">
+        🟡 Extra práca
+      </label>
+    </div>
+    <div style="display:flex;gap:10px;flex:1;flex-wrap:wrap">
+      <input type="text" name="popis_stop" id="popisStop" placeholder="Popis činnosti (povinné)"
+             style="flex:1;min-width:180px;background:rgba(255,255,255,0.15);border-color:rgba(255,255,255,0.3);color:#fff;">
+      <button type="submit" class="btn btn-danger btn-lg">⏹ Zastaviť prácu</button>
+      <button type="button" class="btn" onclick="toggleZmenitKlienta()"
+              style="background:rgba(255,255,255,0.15);color:#fff;border:1.5px solid rgba(255,255,255,0.3)">
+        🔄 Zmeniť klienta
+      </button>
+    </div>
+    {% else %}
     <div style="display:flex;gap:10px;flex:1;flex-wrap:wrap">
       <input type="text" name="poznamka" placeholder="Záverečná poznámka (voliteľné)"
              style="flex:1;min-width:180px;background:rgba(255,255,255,0.15);border-color:rgba(255,255,255,0.3);color:#fff;">
@@ -80,6 +108,7 @@
         🔄 Zmeniť klienta
       </button>
     </div>
+    {% endif %}
     <div id="chybaStop" style="display:none;color:#FCA5A5;font-size:12px;margin-top:6px;"></div>
   </form>
 
@@ -288,38 +317,34 @@ function validateCinnost(form) {
   return true;
 }
 
+function highlightStopTyp() {
+  const bezna = document.getElementById('typStopBezna');
+  const extra = document.getElementById('typStopExtra');
+  if (!bezna) return;
+  document.getElementById('labelStopBezna').style.borderColor = bezna.checked ? '#60A5FA' : 'rgba(255,255,255,0.25)';
+  document.getElementById('labelStopBezna').style.background  = bezna.checked ? 'rgba(96,165,250,0.25)' : 'rgba(255,255,255,0.12)';
+  document.getElementById('labelStopExtra').style.borderColor = extra.checked ? '#FBBF24' : 'rgba(255,255,255,0.25)';
+  document.getElementById('labelStopExtra').style.background  = extra.checked ? 'rgba(251,191,36,0.2)' : 'rgba(255,255,255,0.12)';
+}
+
 function validateStop(form) {
-  const popis = document.getElementById('popisCinnosti');
   const chyba = document.getElementById('chybaStop');
   {% if not aktivny.cinnosti %}
-  // Žiadna činnosť ešte nebola pridaná
-  if (popis && !popis.value.trim()) {
+  // Ešte žiadna činnosť — vyžadujeme popis a typ priamo v stop formulári
+  const popis = document.getElementById('popisStop');
+  const typ   = form.querySelector('[name="typ"]:checked');
+  if (!popis.value.trim()) {
     chyba.style.display = 'block';
-    chyba.textContent = '⚠ Najprv pridajte aspoň jednu činnosť (s typom Bežná/Extra).';
+    chyba.textContent = '⚠ Vyplňte popis činnosti.';
     popis.style.borderColor = '#F87171';
     popis.focus();
     return false;
   }
-  // Popis vyplnený ale typ nevybraný
-  const typ = document.querySelector('[name="typ"]:checked');
-  if (popis && popis.value.trim() && !typ) {
+  if (!typ) {
     chyba.style.display = 'block';
-    chyba.textContent = '⚠ Vyberte typ činnosti (Bežná / Extra) a kliknite Rozdeliť.';
-    return false;
-  }
-  // Popis vyplnený a typ vybraný — treba najprv odoslať činnosť
-  if (popis && popis.value.trim() && typ) {
-    chyba.style.display = 'block';
-    chyba.textContent = '⚠ Najprv kliknite "Rozdeliť / Pridať činnosť" pred zastavením.';
-    return false;
-  }
-  {% else %}
-  // Už existujú činnosti — ak je v poli text, treba ho najprv odoslať
-  if (popis && popis.value.trim()) {
-    chyba.style.display = 'block';
-    chyba.textContent = '⚠ Máte nevyplnenú činnosť. Najprv kliknite "Rozdeliť / Pridať činnosť".';
-    popis.style.borderColor = '#F87171';
-    popis.focus();
+    chyba.textContent = '⚠ Vyberte typ práce (Bežná / Extra).';
+    document.getElementById('labelStopBezna').style.borderColor = '#F87171';
+    document.getElementById('labelStopExtra').style.borderColor = '#F87171';
     return false;
   }
   {% endif %}
