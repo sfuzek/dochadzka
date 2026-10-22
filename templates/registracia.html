@@ -32,6 +32,14 @@
         <label>Heslo znovu</label>
         <input type="password" name="heslo2" placeholder="Zopakujte heslo" required>
       </div>
+      {% if not prvy_user %}
+      <div class="form-group">
+        <label>🔑 Registračný kód organizácie</label>
+        <input type="text" name="reg_kod" placeholder="Zadajte kód od správcu" required
+               autocomplete="off" style="font-family:monospace;letter-spacing:1px;">
+        <small style="color:#888;font-size:12px;">Kód získate od správcu vašej firmy.</small>
+      </div>
+      {% endif %}
       <button type="submit" class="btn btn-primary btn-full btn-lg" style="margin-top:8px">
         Zaregistrovať sa
       </button>
@@ -40,9 +48,11 @@
     <div class="auth-footer">
       Máte účet? <a href="{{ url_for('login') }}">Prihláste sa</a>
     </div>
+    {% if prvy_user %}
     <p class="text-sm text-muted" style="text-align:center;margin-top:12px">
       💡 Prvý zaregistrovaný používateľ sa stane správcom.
     </p>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

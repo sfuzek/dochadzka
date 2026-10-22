@@ -56,9 +56,12 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .nav-icon { font-size: 16px; width: 20px; text-align: center; }
 .nav-section { font-size: 10px; font-weight: 600; letter-spacing: 1px; opacity: 0.4;
   padding: 14px 20px 4px; text-transform: uppercase; }
-.sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.08); }
+.sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 8px; }
 .sidebar-footer a { color: rgba(255,255,255,0.5); text-decoration: none; font-size: 12px; }
 .sidebar-footer a:hover { color: #fff; }
+.nav-link-settings { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; color: rgba(255,255,255,0.6) !important; text-decoration: none; font-size: 13px; transition: all 0.2s; }
+.nav-link-settings:hover { background: rgba(255,255,255,0.1); color: #fff !important; }
+.nav-link-settings.active { background: rgba(255,255,255,0.15); color: #fff !important; }
 
 .main { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
 .topbar {
@@ -118,6 +121,8 @@ textarea { resize: vertical; min-height: 70px; }
 .btn-warning:hover { background: #B45309; }
 .btn-outline { background: transparent; color: var(--text); border: 1.5px solid var(--border); }
 .btn-outline:hover { border-color: var(--blue); color: var(--blue); }
+.btn-secondary { background: var(--bg-light); color: var(--text); border: 1.5px solid var(--border); }
+.btn-secondary:hover { border-color: var(--blue); color: var(--blue); }
 .btn-sm { padding: 6px 12px; font-size: 12px; }
 .btn-xs { padding: 4px 9px; font-size: 11px; border-radius: 6px; }
 .btn-full { width: 100%; justify-content: center; }

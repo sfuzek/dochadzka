@@ -83,3 +83,25 @@ class Uloha(db.Model):
     hotovo          = db.Column(db.Boolean, default=False)
     hotovo_at       = db.Column(db.DateTime, nullable=True)
     created_at      = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Nastavenie(db.Model):
+    __tablename__ = 'nastavenia'
+    id      = db.Column(db.Integer, primary_key=True)
+    kluc    = db.Column(db.String(100), unique=True, nullable=False)
+    hodnota = db.Column(db.String(500), nullable=False)
+
+    @staticmethod
+    def get(kluc, default=None):
+        n = Nastavenie.query.filter_by(kluc=kluc).first()
+        return n.hodnota if n else default
+
+    @staticmethod
+    def set(kluc, hodnota):
+        n = Nastavenie.query.filter_by(kluc=kluc).first()
+        if n:
+            n.hodnota = hodnota
+        else:
+            n = Nastavenie(kluc=kluc, hodnota=hodnota)
+            db.session.add(n)
+        db.session.commit()

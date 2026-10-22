@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file, jsonify
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from models import db, User, Klient, Zaznam, Cinnost, Uloha
+from models import db, User, Klient, Zaznam, Cinnost, Uloha, Nastavenie
 from datetime import datetime, timezone, timedelta
 import bcrypt
 import io
@@ -52,31 +52,43 @@ def index():
 def registracia():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
+    # Ak už existuje aspoň jeden user, vyžadujeme registračný kód
+    prvy_user = User.query.count() == 0
     if request.method == 'POST':
         meno   = request.form.get('meno', '').strip()
         email  = request.form.get('email', '').strip().lower()
         heslo  = request.form.get('heslo', '')
         heslo2 = request.form.get('heslo2', '')
+        reg_kod = request.form.get('reg_kod', '').strip()
         if not meno or not email or not heslo:
             flash('Vyplňte všetky polia.', 'error')
-            return render_template('registracia.html')
+            return render_template('registracia.html', prvy_user=prvy_user)
         if heslo != heslo2:
             flash('Heslá sa nezhodujú.', 'error')
-            return render_template('registracia.html')
+            return render_template('registracia.html', prvy_user=prvy_user)
         if len(heslo) < 6:
             flash('Heslo musí mať aspoň 6 znakov.', 'error')
-            return render_template('registracia.html')
+            return render_template('registracia.html', prvy_user=prvy_user)
+        # Kontrola registračného kódu (nie pre prvého používateľa)
+        if not prvy_user:
+            ulozeny_kod = Nastavenie.get('reg_kod', '')
+            if not ulozeny_kod:
+                flash('Registrácia je momentálne zakázaná. Kontaktujte správcu.', 'error')
+                return render_template('registracia.html', prvy_user=prvy_user)
+            if reg_kod != ulozeny_kod:
+                flash('Nesprávny registračný kód organizácie.', 'error')
+                return render_template('registracia.html', prvy_user=prvy_user)
         if User.query.filter_by(email=email).first():
             flash('Email už existuje.', 'error')
-            return render_template('registracia.html')
+            return render_template('registracia.html', prvy_user=prvy_user)
         hash_hesla = bcrypt.hashpw(heslo.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        is_admin = User.query.count() == 0
+        is_admin = prvy_user
         user = User(meno=meno, email=email, heslo=hash_hesla, is_admin=is_admin)
         db.session.add(user)
         db.session.commit()
         flash('Registrácia úspešná! Prihláste sa.', 'success')
         return redirect(url_for('login'))
-    return render_template('registracia.html')
+    return render_template('registracia.html', prvy_user=prvy_user)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -347,6 +359,23 @@ def toggle_admin(user_id):
     db.session.commit()
     flash(f'{user.meno} — rola zmenená.', 'success')
     return redirect(url_for('admin'))
+
+
+# ── NASTAVENIA ────────────────────────────────────────────────────────────────
+
+@app.route('/nastavenia', methods=['GET', 'POST'])
+@login_required
+def nastavenia():
+    if not current_user.is_admin:
+        flash('Prístup zamietnutý. Nastavenia môže meniť iba správca.', 'error')
+        return redirect(url_for('dashboard'))
+    if request.method == 'POST':
+        reg_kod = request.form.get('reg_kod', '').strip()
+        Nastavenie.set('reg_kod', reg_kod)
+        flash('Nastavenia boli uložené.', 'success')
+        return redirect(url_for('nastavenia'))
+    aktualny_kod = Nastavenie.get('reg_kod', '')
+    return render_template('nastavenia.html', aktualny_kod=aktualny_kod)
 
 
 # ── ÚLOHY ─────────────────────────────────────────────────────────────────────
