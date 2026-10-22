@@ -31,6 +31,7 @@
     Začiatok: {{ aktivny.cas_start.strftime('%H:%M') }} dňa {{ aktivny.cas_start.strftime('%d.%m.%Y') }}
   </div>
 
+  {% if aktivny.cinnosti %}{# Formulár Rozdeliť — len ak existujú predchádzajúce cinnosti #}
   <form method="POST" action="{{ url_for('pridat_cinnost') }}" style="margin-top:18px"
         onsubmit="return validateCinnost(this)" id="formCinnost">
     <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
@@ -67,6 +68,7 @@
       ⚠ Vyplňte popis činnosti a vyberte typ (Bežná / Extra).
     </div>
   </form>
+  {% endif %}{# end if aktivny.cinnosti — koniec formulára Rozdeliť #}
 
   <form method="POST" action="{{ url_for('stop_cas') }}" class="timer-actions"
         onsubmit="return validateStop(this)">
