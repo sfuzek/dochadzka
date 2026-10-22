@@ -54,6 +54,23 @@
         🟡 Extra práca
       </label>
     </div>
+    {# Predvolené činnosti — rýchly výber #}
+    {% if pred_cinnosti %}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px" id="predCinnostiChips">
+      {% for pc in pred_cinnosti %}
+      <button type="button"
+              onclick="vyberPredCinnost({{ pc.id }}, '{{ pc.nazov|e }}', '{{ pc.typ }}')"
+              data-id="{{ pc.id }}" data-nazov="{{ pc.nazov|e }}" data-typ="{{ pc.typ }}"
+              style="background:rgba(255,255,255,0.1);border:1.5px solid rgba(255,255,255,0.2);
+                     border-radius:20px;padding:4px 12px;font-size:12px;color:rgba(255,255,255,0.85);
+                     cursor:pointer;transition:all .15s;font-family:inherit;"
+              onmouseover="this.style.background='rgba(255,255,255,0.2)'"
+              onmouseout="this.style.background='rgba(255,255,255,0.1)'">
+        {% if pc.typ == 'extra' %}🟡{% else %}🟦{% endif %} {{ pc.nazov }}
+      </button>
+      {% endfor %}
+    </div>
+    {% endif %}
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <input type="text" id="popisCinnosti" placeholder="Popíšte činnosť (napr. analýza, fakturácia...)"
              style="flex:1;min-width:200px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.3);
@@ -220,6 +237,47 @@
   {% endif %}
 </div>
 
+<!-- Správa predvolených činností -->
+<div class="card mb-0">
+  <div class="card-header">
+    <h3>📋 Predvolené činnosti</h3>
+    <button onclick="togglePredCinnosti()" class="btn btn-outline btn-sm" id="btnTogglePred">Spravovať ▾</button>
+  </div>
+  <div id="predCinnostiPanel" style="display:none;margin-top:12px">
+    <!-- Zoznam existujúcich -->
+    {% if pred_cinnosti %}
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+      {% for pc in pred_cinnosti %}
+      <span style="display:inline-flex;align-items:center;gap:5px;background:var(--bg,#161b27);
+                   border:1px solid var(--border,#2a3142);border-radius:20px;padding:4px 10px;font-size:12px;">
+        {% if pc.typ == 'extra' %}🟡{% else %}🟦{% endif %} {{ pc.nazov }}
+        {% if current_user.is_admin or pc.created_by == current_user.id %}
+        <form method="POST" action="{{ url_for('zmazat_predefinovanu', cin_id=pc.id) }}" style="display:inline"
+              onsubmit="return confirm('Odstrániť „{{ pc.nazov }}"?')">
+          <button type="submit" style="background:none;border:none;cursor:pointer;color:var(--text-muted,#8891a4);font-size:14px;line-height:1;padding:0 0 0 2px">×</button>
+        </form>
+        {% endif %}
+      </span>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted text-sm" style="margin-bottom:12px">Zatiaľ žiadne predvolené činnosti.</p>
+    {% endif %}
+    <!-- Pridať novú -->
+    <form method="POST" action="{{ url_for('pridat_predefinovanu') }}">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input type="text" name="nazov" placeholder="Nová činnosť (napr. Účtovníctvo)" required
+               style="flex:1;min-width:160px;font-size:13px">
+        <select name="typ" style="font-size:13px">
+          <option value="bezna">🟦 Bežná</option>
+          <option value="extra">🟡 Extra</option>
+        </select>
+        <button type="submit" class="btn btn-primary btn-sm">➕ Pridať</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script>
 {% if aktivny %}
 const startTime = new Date("{{ aktivny.cas_start.strftime('%Y-%m-%dT%H:%M:%S') }}");
@@ -276,6 +334,38 @@ function highlightTyp() {
   document.getElementById('labelExtra').style.background  = extra.checked ? 'rgba(251,191,36,0.2)' : 'rgba(255,255,255,0.12)';
   // Reset červeného zvýraznenia chyby
   document.getElementById('popisCinnosti').style.borderColor = 'rgba(255,255,255,0.3)';
+}
+
+function togglePredCinnosti() {
+  const panel = document.getElementById('predCinnostiPanel');
+  const btn   = document.getElementById('btnTogglePred');
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+    btn.textContent = 'Zavrieť ▴';
+  } else {
+    panel.style.display = 'none';
+    btn.textContent = 'Spravovať ▾';
+  }
+}
+
+// Kliknutie na predvolenú činnosť — vyplní popis a vyberie typ
+function vyberPredCinnost(id, nazov, typ) {
+  document.getElementById('popisCinnosti').value = nazov;
+  document.getElementById('popisCinnosti').style.borderColor = 'rgba(255,255,255,0.3)';
+  // Vyber správny radio button
+  if (typ === 'extra') {
+    document.getElementById('typExtra').checked = true;
+  } else {
+    document.getElementById('typBezna').checked = true;
+  }
+  highlightTyp();
+  // Vizuálne označenie vybraného chipu
+  document.querySelectorAll('#predCinnostiChips button').forEach(b => {
+    b.style.borderColor = 'rgba(255,255,255,0.2)';
+    b.style.background = 'rgba(255,255,255,0.1)';
+  });
+  event.currentTarget.style.borderColor = typ === 'extra' ? '#FBBF24' : '#60A5FA';
+  event.currentTarget.style.background  = typ === 'extra' ? 'rgba(251,191,36,0.2)' : 'rgba(96,165,250,0.2)';
 }
 
 // Skopíruje popis+typ zo spoločných polí do hidden inputov pred odoslaním

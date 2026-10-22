@@ -3,11 +3,64 @@
 {% block page_title %}Môj výkaz{% endblock %}
 
 {% block topbar_actions %}
+<button onclick="document.getElementById('dovolenkaModal').style.display='flex'"
+        class="btn btn-outline btn-sm">🏖 Dovolenka</button>
 <a href="{{ url_for('export_excel', datum_od=datum_od, datum_do=datum_do, klient_id=klient_id) }}"
    class="btn btn-success btn-sm">⬇ Export do Excelu</a>
 {% endblock %}
 
 {% block content %}
+<!-- ── DOVOLENKA MODAL ──────────────────────────────────────────────────────── -->
+<div id="dovolenkaModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;align-items:center;justify-content:center">
+  <div style="background:var(--card-bg,#1e2533);border:1px solid var(--border,#2a3142);border-radius:14px;padding:28px 32px;width:min(480px,95vw);max-height:90vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <h3 style="margin:0;font-size:18px">🏖 Správa dovoleniek</h3>
+      <button onclick="document.getElementById('dovolenkaModal').style.display='none'"
+              style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text-muted,#8891a4);line-height:1">×</button>
+    </div>
+
+    <!-- Formulár: nová dovolenka -->
+    <form method="POST" action="{{ url_for('pridat_dovolenku') }}">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="form-group" style="margin:0">
+          <label style="font-size:12px">Dátum od</label>
+          <input type="date" name="datum_od" required style="width:100%">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label style="font-size:12px">Dátum do</label>
+          <input type="date" name="datum_do" required style="width:100%">
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label style="font-size:12px">Poznámka (nepovinné)</label>
+        <input type="text" name="poznamka" placeholder="napr. letná dovolenka" style="width:100%">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%">➕ Pridať dovolenku</button>
+    </form>
+
+    <!-- Zoznam existujúcich dovoleniek -->
+    {% if dovolenky %}
+    <div style="margin-top:20px;border-top:1px solid var(--border,#2a3142);padding-top:16px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text-muted,#8891a4)">Zadané dovolenky</div>
+      {% for d in dovolenky %}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:8px;background:var(--bg,#161b27);margin-bottom:6px;gap:10px">
+        <div style="flex:1;min-width:0">
+          <span style="font-size:13px;font-weight:600">{{ d.datum_od.strftime('%d.%m.%Y') }} – {{ d.datum_do.strftime('%d.%m.%Y') }}</span>
+          {% if d.poznamka %}
+          <span style="font-size:11px;color:var(--text-muted,#8891a4);margin-left:8px">{{ d.poznamka }}</span>
+          {% endif %}
+        </div>
+        <form method="POST" action="{{ url_for('zmazat_dovolenku', dov_id=d.id) }}"
+              onsubmit="return confirm('Zmazať túto dovolenku?')">
+          <button type="submit" class="btn btn-xs" style="background:#dc2626;color:#fff;padding:3px 8px;font-size:11px">× Zmazať</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
 <div class="card">
   <div class="card-title">🔍 Filtrovanie</div>
   <form method="GET" class="filters">
@@ -53,6 +106,29 @@
   </div>
 </div>
 
+{% if dovolenkove_dni %}
+<div class="card mb-0" style="border-left:3px solid #f59e0b">
+  <div class="card-title" style="color:#f59e0b">🏖 Dovolenkové dni ({{ dovolenkove_dni|length }})</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Dátum</th><th>Deň</th><th>Poznámka</th></tr>
+      </thead>
+      <tbody>
+        {% set dni_sk = ['Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota','Nedeľa'] %}
+        {% for dd in dovolenkove_dni %}
+        <tr>
+          <td><strong>{{ dd.datum.strftime('%d.%m.%Y') }}</strong></td>
+          <td><span class="badge badge-orange">{{ dni_sk[dd.datum.weekday()] }}</span></td>
+          <td class="text-muted text-sm">{{ dd.poznamka or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 <div class="card mb-0">
   {% if zaznamy %}
   <div class="table-wrap">
@@ -93,17 +169,32 @@
             <!-- Pridať činnosť dodatočne -->
             <details style="margin-top:4px">
               <summary style="cursor:pointer;font-size:11px;color:var(--muted)">+ Pridať činnosť</summary>
-              <form method="POST" action="{{ url_for('pridat_cinnost') }}" style="margin-top:6px">
+              <form method="POST" action="{{ url_for('pridat_cinnost') }}" style="margin-top:6px"
+                    id="formCin{{ z.id }}">
                 <input type="hidden" name="zaznam_id" value="{{ z.id }}">
                 <input type="hidden" name="redirect" value="vykaz">
+                {% if pred_cinnosti %}
+                <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px">
+                  {% for pc in pred_cinnosti %}
+                  <button type="button"
+                          onclick="vyberCinVykaz({{ z.id }},'{{ pc.nazov|e }}','{{ pc.typ }}')"
+                          style="background:var(--bg,#161b27);border:1px solid var(--border,#2a3142);
+                                 border-radius:14px;padding:2px 9px;font-size:11px;cursor:pointer;
+                                 color:var(--text,#e2e8f0);font-family:inherit">
+                    {% if pc.typ == 'extra' %}🟡{% else %}🟦{% endif %} {{ pc.nazov }}
+                  </button>
+                  {% endfor %}
+                </div>
+                {% endif %}
                 <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
                   <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
-                    <input type="radio" name="typ" value="bezna" checked> 🟦 Bežná
+                    <input type="radio" name="typ" value="bezna" checked id="typV{{ z.id }}bezna"> 🟦 Bežná
                   </label>
                   <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
-                    <input type="radio" name="typ" value="extra"> 🟡 Extra
+                    <input type="radio" name="typ" value="extra" id="typV{{ z.id }}extra"> 🟡 Extra
                   </label>
-                  <input type="text" name="popis" placeholder="Popis činnosti" style="flex:1;font-size:12px;padding:5px 8px;min-width:120px">
+                  <input type="text" name="popis" id="popisV{{ z.id }}" placeholder="Popis činnosti"
+                         style="flex:1;font-size:12px;padding:5px 8px;min-width:120px">
                   <button type="submit" class="btn btn-primary btn-xs">Pridať</button>
                 </div>
               </form>
@@ -132,4 +223,12 @@
   </div>
   {% endif %}
 </div>
+
+<script>
+function vyberCinVykaz(zid, nazov, typ) {
+  document.getElementById('popisV' + zid).value = nazov;
+  var r = document.getElementById('typV' + zid + (typ === 'extra' ? 'extra' : 'bezna'));
+  if (r) r.checked = true;
+}
+</script>
 {% endblock %}

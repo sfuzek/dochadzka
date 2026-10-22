@@ -3,7 +3,7 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from flask_wtf.csrf import CSRFProtect, CSRFError
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from models import db, User, Klient, Zaznam, Cinnost, Uloha, Nastavenie, LoginLog
+from models import db, User, Klient, Zaznam, Cinnost, Uloha, Nastavenie, LoginLog, Dovolenka, PredefinovanaCinnost
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 import bcrypt
@@ -243,8 +243,11 @@ def dashboard():
                            .order_by(Zaznam.cas_start.desc()).limit(5).all()
     moje_ulohy = Uloha.query.filter_by(prijimatel_id=current_user.id, hotovo=False)\
                              .order_by(Uloha.urgencia.desc(), Uloha.created_at.desc()).all()
+    pred_cinnosti = PredefinovanaCinnost.query.filter_by(aktivna=True)\
+                                              .order_by(PredefinovanaCinnost.nazov).all()
     return render_template('dashboard.html', aktivny=aktivny, klienti=klienti,
-                           posledne=posledne, moje_ulohy=moje_ulohy)
+                           posledne=posledne, moje_ulohy=moje_ulohy,
+                           pred_cinnosti=pred_cinnosti)
 
 
 # ── ČASOVAČ ───────────────────────────────────────────────────────────────────
@@ -459,6 +462,7 @@ def _filter_zaznamy(user_id, datum_od, datum_do, klient_id):
 @app.route('/vykaz')
 @login_required
 def vykaz():
+    from datetime import date
     datum_od  = request.args.get('datum_od', '')
     datum_do  = request.args.get('datum_do', '')
     klient_id = request.args.get('klient_id', '')
@@ -467,9 +471,36 @@ def vykaz():
     klienti   = Klient.query.order_by(Klient.nazov).all()
     celk_sek  = sum(z.trvanie_sekundy or 0 for z in zaznamy)
     celkovy   = f'{celk_sek // 3600:02d}:{(celk_sek % 3600) // 60:02d}'
+
+    # Dovolenky — všetky záznamy používateľa
+    dovolenky = Dovolenka.query.filter_by(user_id=current_user.id)\
+                               .order_by(Dovolenka.datum_od.desc()).all()
+
+    # Dni s aktívnymi záznamami (dni kde beží alebo bežal časovač)
+    pracovne_dni = set()
+    for z in Zaznam.query.filter_by(user_id=current_user.id).all():
+        pracovne_dni.add(z.datum)
+
+    # Vypočítaj skutočné dovolenkové dni (bez pracovných dní)
+    # Pre každú dovolenku expanduj rozsah dátumov → zoznam dní, filtruj pracovné dni
+    from datetime import timedelta as td
+    dovolenkove_dni = []
+    for d in dovolenky:
+        cur = d.datum_od
+        while cur <= d.datum_do:
+            if cur not in pracovne_dni:
+                dovolenkove_dni.append({'datum': cur, 'dovolenka_id': d.id, 'poznamka': d.poznamka})
+            cur += td(days=1)
+    # Zoradiť podľa dátumu zostupne
+    dovolenkove_dni.sort(key=lambda x: x['datum'], reverse=True)
+
+    pred_cinnosti = PredefinovanaCinnost.query.filter_by(aktivna=True)\
+                                              .order_by(PredefinovanaCinnost.nazov).all()
     return render_template('vykaz.html', zaznamy=zaznamy, klienti=klienti,
                            celkovy=celkovy, datum_od=datum_od, datum_do=datum_do,
-                           klient_id=klient_id)
+                           klient_id=klient_id, dovolenky=dovolenky,
+                           dovolenkove_dni=dovolenkove_dni,
+                           pred_cinnosti=pred_cinnosti)
 
 @app.route('/vykaz/export')
 @login_required
@@ -483,6 +514,89 @@ def export_excel():
     filename = f'dochadzka_{current_user.meno.replace(" ","_")}_{now_sk().strftime("%Y%m%d")}.xlsx'
     return send_file(output, as_attachment=True, download_name=filename,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+# ── DOVOLENKY ─────────────────────────────────────────────────────────────────
+
+@app.route('/vykaz/dovolenka', methods=['POST'])
+@login_required
+def pridat_dovolenku():
+    from datetime import date
+    datum_od_str = request.form.get('datum_od', '').strip()
+    datum_do_str = request.form.get('datum_do', '').strip()
+    poznamka = request.form.get('poznamka', '').strip()
+    try:
+        datum_od = date.fromisoformat(datum_od_str)
+        datum_do = date.fromisoformat(datum_do_str)
+    except ValueError:
+        flash('Neplatné dátumy dovolenky.', 'error')
+        return redirect(url_for('vykaz'))
+    if datum_od > datum_do:
+        flash('Dátum začiatku musí byť pred dátumom konca.', 'error')
+        return redirect(url_for('vykaz'))
+    d = Dovolenka(user_id=current_user.id, datum_od=datum_od, datum_do=datum_do,
+                  poznamka=poznamka, created_at=now_sk())
+    db.session.add(d)
+    db.session.commit()
+    flash(f'Dovolenka {datum_od.strftime("%d.%m.%Y")} – {datum_do.strftime("%d.%m.%Y")} pridaná.', 'success')
+    return redirect(url_for('vykaz'))
+
+@app.route('/vykaz/dovolenka/<int:dov_id>/zmazat', methods=['POST'])
+@login_required
+def zmazat_dovolenku(dov_id):
+    d = Dovolenka.query.filter_by(id=dov_id, user_id=current_user.id).first_or_404()
+    db.session.delete(d)
+    db.session.commit()
+    flash('Dovolenka vymazaná.', 'success')
+    return redirect(url_for('vykaz'))
+
+
+# ── PREDEFINOVANÉ ČINNOSTI ────────────────────────────────────────────────────
+
+@app.route('/cinnosti/predefinovane')
+@login_required
+def predefinovane_cinnosti():
+    cinnosti = PredefinovanaCinnost.query.filter_by(aktivna=True)\
+                                         .order_by(PredefinovanaCinnost.nazov).all()
+    return jsonify([{'id': c.id, 'nazov': c.nazov, 'typ': c.typ} for c in cinnosti])
+
+@app.route('/cinnosti/predefinovane/pridaj', methods=['POST'])
+@login_required
+def pridat_predefinovanu():
+    nazov = request.form.get('nazov', '').strip()
+    typ   = request.form.get('typ', 'bezna').strip()
+    if not nazov:
+        flash('Zadajte názov činnosti.', 'error')
+        return redirect(request.referrer or url_for('dashboard'))
+    if typ not in ('bezna', 'extra'):
+        typ = 'bezna'
+    # Kontrola duplicity
+    existuje = PredefinovanaCinnost.query.filter(
+        PredefinovanaCinnost.nazov.ilike(nazov),
+        PredefinovanaCinnost.aktivna == True
+    ).first()
+    if existuje:
+        flash(f'Činnosť „{nazov}" už existuje.', 'error')
+        return redirect(request.referrer or url_for('dashboard'))
+    c = PredefinovanaCinnost(nazov=nazov, typ=typ, created_by=current_user.id,
+                              created_at=now_sk())
+    db.session.add(c)
+    db.session.commit()
+    flash(f'Činnosť „{nazov}" pridaná.', 'success')
+    return redirect(request.referrer or url_for('dashboard'))
+
+@app.route('/cinnosti/predefinovane/<int:cin_id>/zmazat', methods=['POST'])
+@login_required
+def zmazat_predefinovanu(cin_id):
+    c = PredefinovanaCinnost.query.get_or_404(cin_id)
+    # Môže mazať iba správca alebo autor
+    if not current_user.is_admin and c.created_by != current_user.id:
+        flash('Prístup zamietnutý.', 'error')
+        return redirect(request.referrer or url_for('dashboard'))
+    c.aktivna = False
+    db.session.commit()
+    flash(f'Činnosť „{c.nazov}" odstránená.', 'success')
+    return redirect(request.referrer or url_for('dashboard'))
 
 
 # ── ADMIN ─────────────────────────────────────────────────────────────────────

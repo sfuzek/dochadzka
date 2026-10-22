@@ -98,6 +98,31 @@ class LoginLog(db.Model):
     user = db.relationship('User', backref='login_logy', lazy=True, foreign_keys=[user_id])
 
 
+class PredefinovanaCinnost(db.Model):
+    """Zoznam predvolených činností viditeľných pre všetkých užívateľov."""
+    __tablename__ = 'predefinovane_cinnosti'
+    id         = db.Column(db.Integer, primary_key=True)
+    nazov      = db.Column(db.String(200), nullable=False)
+    typ        = db.Column(db.String(20), nullable=False, default='bezna')  # 'bezna' | 'extra'
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    aktivna    = db.Column(db.Boolean, default=True)
+
+    autor = db.relationship('User', backref='predefinovane_cinnosti', lazy=True)
+
+
+class Dovolenka(db.Model):
+    __tablename__ = 'dovolenky'
+    id        = db.Column(db.Integer, primary_key=True)
+    user_id   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    datum_od  = db.Column(db.Date, nullable=False)
+    datum_do  = db.Column(db.Date, nullable=False)
+    poznamka  = db.Column(db.String(200), default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref='dovolenky', lazy=True)
+
+
 class Nastavenie(db.Model):
     __tablename__ = 'nastavenia'
     id      = db.Column(db.Integer, primary_key=True)
