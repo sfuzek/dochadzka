@@ -2,6 +2,12 @@
 {% block title %}Správca — Dochádzka{% endblock %}
 {% block page_title %}Správa zamestnancov{% endblock %}
 
+{% block topbar_actions %}
+<a href="{{ url_for('admin_analyza') }}" class="btn btn-success btn-sm">
+  📈 Stiahnuť analýzu (Excel)
+</a>
+{% endblock %}
+
 {% block content %}
 <div class="card">
   <div class="card-title">👥 Všetci zamestnanci ({{ users|length }})</div>

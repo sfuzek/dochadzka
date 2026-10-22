@@ -33,6 +33,9 @@
       <a href="{{ url_for('admin_logy') }}" class="nav-link {% if request.endpoint == 'admin_logy' %}active{% endif %}">
         <span class="nav-icon">🔐</span> Log prihlásení
       </a>
+      <a href="{{ url_for('admin_analyza') }}" class="nav-link {% if request.endpoint == 'admin_analyza' %}active{% endif %}">
+        <span class="nav-icon">📈</span> Analýza (Excel)
+      </a>
       {% endif %}
     </nav>
     <div class="sidebar-footer">

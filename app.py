@@ -5,6 +5,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from models import db, User, Klient, Zaznam, Cinnost, Uloha, Nastavenie, LoginLog
 from datetime import datetime, timezone, timedelta
+from collections import defaultdict
 import bcrypt
 import io
 import os
@@ -556,6 +557,408 @@ def toggle_admin(user_id):
     return redirect(url_for('admin'))
 
 
+# ── ADMIN ANALYTIKA ───────────────────────────────────────────────────────────
+
+@app.route('/admin/analyza')
+@login_required
+def admin_analyza():
+    if not current_user.is_admin:
+        flash('Prístup zamietnutý.', 'error')
+        return redirect(url_for('dashboard'))
+
+    # Načítame všetky ukončené záznamy so cinnosťami
+    vsetky_zaznamy = (Zaznam.query
+                     .filter(Zaznam.cas_stop.isnot(None))
+                     .order_by(Zaznam.datum.asc()).all())
+
+    wb = openpyxl.Workbook()
+    navy  = '1E3A5F'; blue2 = '2E6DA4'; white = 'FFFFFF'
+    green = '065F46'; green_bg = 'D1FAE5'
+    orange = '92400E'; orange_bg = 'FEF3C7'
+    red_bg = 'FEE2E2'; red_fg = '991B1B'
+    light = 'EEF4FB'; gray = 'F1F5F9'
+
+    hdr = lambda ws, row, col, val, bg=navy, fg=white, bold=True, size=10: _acell(ws,row,col,val,bg,fg,bold,size)
+
+    def _acell(ws, row, col, val, bg=None, fg='000000', bold=False, size=10, align='center'):
+        c = ws.cell(row=row, column=col, value=val)
+        if bg:
+            c.fill = PatternFill('solid', start_color=bg)
+        c.font = Font(bold=bold, color=fg, name='Calibri', size=size)
+        c.alignment = Alignment(horizontal=align, vertical='center', wrap_text=True)
+        thin = Border(
+            left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
+            top=Side(style='thin', color='CCCCCC'),  bottom=Side(style='thin', color='CCCCCC'))
+        c.border = thin
+        return c
+
+    def sek_na_hod(sek):
+        return round(sek / 3600, 2)
+
+    def format_hod(sek):
+        h = sek // 3600; m = (sek % 3600) // 60
+        return f'{h:02d}:{m:02d}'
+
+    export_cas = now_sk().strftime('%d.%m.%Y %H:%M')
+
+    # ── 1. SHEET: Prehľad podľa klientov (celkovo) ────────────────────────────
+    ws1 = wb.active
+    ws1.title = '1. Klienti – celkovo'
+
+    klient_data = defaultdict(lambda: {'sek': 0, 'bezna_sek': 0, 'extra_sek': 0,
+                                        'zaznamov': 0, 'cinnosti': [], 'mesiace': defaultdict(int)})
+    for z in vsetky_zaznamy:
+        k = z.klient.nazov if z.klient else 'Neznámy'
+        mes = z.datum.strftime('%Y-%m') if z.datum else '?'
+        sek = z.trvanie_sekundy or 0
+        klient_data[k]['sek'] += sek
+        klient_data[k]['zaznamov'] += 1
+        klient_data[k]['mesiace'][mes] += sek
+        for cin in z.cinnosti:
+            cin_sek = int((cin.cas_do - cin.cas_od).total_seconds()) if cin.cas_do and cin.cas_od else 0
+            if cin.typ == 'extra':
+                klient_data[k]['extra_sek'] += cin_sek
+            else:
+                klient_data[k]['bezna_sek'] += cin_sek
+            klient_data[k]['cinnosti'].append(cin.popis)
+
+    ws1.merge_cells('A1:H1')
+    _acell(ws1,1,1,f'Prehľad odpracovaných hodín podľa klientov  |  Export: {export_cas}',
+           navy,white,True,13,'left')
+    ws1.row_dimensions[1].height = 28
+
+    hlavicky1 = ['Klient','Celkové hodiny','Bežná práca','Extra práca',
+                 '% Extra','Počet záznamov','Prvý záznam','Posledný záznam']
+    sirky1    = [30, 16, 16, 16, 10, 16, 14, 14]
+    for ci,(h,w) in enumerate(zip(hlavicky1,sirky1),1):
+        _acell(ws1,2,ci,h,navy,white,True,10)
+        ws1.column_dimensions[get_column_letter(ci)].width = w
+    ws1.row_dimensions[2].height = 22
+
+    # Zoradíme podľa celkových hodín
+    sorted_klienti = sorted(klient_data.items(), key=lambda x: x[1]['sek'], reverse=True)
+    celk_sek_total = sum(v['sek'] for v in klient_data.values())
+
+    for ri,(k_nazov,d) in enumerate(sorted_klienti, 3):
+        bg = light if ri % 2 == 0 else white
+        pct_extra = round(d['extra_sek']/d['sek']*100,1) if d['sek'] > 0 else 0
+        # Prvý/posledný záznam
+        daty = [z.datum for z in vsetky_zaznamy if (z.klient.nazov if z.klient else 'Neznámy') == k_nazov and z.datum]
+        prvy  = min(daty).strftime('%d.%m.%Y') if daty else '—'
+        posledny = max(daty).strftime('%d.%m.%Y') if daty else '—'
+
+        _acell(ws1,ri,1,k_nazov,bg,'000000',True,10,'left')
+        _acell(ws1,ri,2,format_hod(d['sek']),bg,blue2,True,10)
+        _acell(ws1,ri,3,format_hod(d['bezna_sek']),bg,'065F46',False,10)
+        _acell(ws1,ri,4,format_hod(d['extra_sek']),bg if pct_extra<20 else orange_bg,
+               '000000' if pct_extra<20 else orange,False,10)
+        # % Extra s farbením
+        pct_bg = orange_bg if pct_extra >= 20 else (green_bg if pct_extra < 5 else bg)
+        pct_fg = orange if pct_extra >= 20 else (green if pct_extra < 5 else '444444')
+        _acell(ws1,ri,5,f'{pct_extra}%',pct_bg,pct_fg,pct_extra>=20,10)
+        _acell(ws1,ri,6,d['zaznamov'],bg,'444444',False,10)
+        _acell(ws1,ri,7,prvy,bg,'888888',False,9)
+        _acell(ws1,ri,8,posledny,bg,'888888',False,9)
+        ws1.row_dimensions[ri].height = 18
+
+    # Súčtový riadok
+    sr = len(sorted_klienti) + 3
+    _acell(ws1,sr,1,'CELKOM',navy,white,True,11,'left')
+    _acell(ws1,sr,2,format_hod(celk_sek_total),blue2,white,True,11)
+    _acell(ws1,sr,3,format_hod(sum(v['bezna_sek'] for v in klient_data.values())),navy,white,True,11)
+    _acell(ws1,sr,4,format_hod(sum(v['extra_sek'] for v in klient_data.values())),navy,white,True,11)
+    ws1.row_dimensions[sr].height = 22
+    ws1.freeze_panes = 'A3'
+
+    # ── 2. SHEET: Mesačný vývoj klientov ──────────────────────────────────────
+    ws2 = wb.create_sheet('2. Mesačný vývoj')
+
+    # Zoznam všetkých mesiacov v dátach
+    vsetky_mesiace = sorted(set(
+        z.datum.strftime('%Y-%m') for z in vsetky_zaznamy if z.datum
+    ))
+
+    ws2.merge_cells(f'A1:{get_column_letter(len(vsetky_mesiace)+2)}1')
+    _acell(ws2,1,1,f'Mesačný vývoj hodín podľa klientov  |  Export: {export_cas}',
+           navy,white,True,13,'left')
+    ws2.row_dimensions[1].height = 28
+
+    _acell(ws2,2,1,'Klient',navy,white,True,10)
+    ws2.column_dimensions['A'].width = 30
+    _acell(ws2,2,2,'Celkom',navy,white,True,10)
+    ws2.column_dimensions['B'].width = 12
+    for mi,mes in enumerate(vsetky_mesiace, 3):
+        rok,miac = mes.split('-')
+        _acell(ws2,2,mi,f'{miac}/{rok}',navy,white,True,10)
+        ws2.column_dimensions[get_column_letter(mi)].width = 11
+    ws2.row_dimensions[2].height = 22
+
+    for ri,(k_nazov,d) in enumerate(sorted_klienti, 3):
+        bg = light if ri % 2 == 0 else white
+        _acell(ws2,ri,1,k_nazov,bg,'000000',True,10,'left')
+        _acell(ws2,ri,2,format_hod(d['sek']),bg,blue2,True,10)
+        for mi,mes in enumerate(vsetky_mesiace, 3):
+            sek_mes = d['mesiace'].get(mes, 0)
+            cell_bg = bg
+            cell_fg = '000000'
+            # Zvýrazni ak je viac ako 40 hodín za mesiac (nad priemerom)
+            if sek_mes > 40*3600:
+                cell_bg = orange_bg; cell_fg = orange
+            elif sek_mes == 0:
+                cell_fg = 'CCCCCC'
+            _acell(ws2,ri,mi,format_hod(sek_mes) if sek_mes else '—',cell_bg,cell_fg,sek_mes>40*3600,9)
+        ws2.row_dimensions[ri].height = 18
+
+    ws2.freeze_panes = 'C3'
+
+    # ── 3. SHEET: Nárast/pokles hodín (MoM) ───────────────────────────────────
+    ws3 = wb.create_sheet('3. Nárast hodín MoM')
+
+    ws3.merge_cells(f'A1:{get_column_letter(len(vsetky_mesiace)+1)}1')
+    _acell(ws3,1,1,f'Medzimsačný nárast odpracovaných hodín (MoM)  |  Export: {export_cas}',
+           navy,white,True,13,'left')
+    ws3.row_dimensions[1].height = 28
+
+    _acell(ws3,2,1,'Klient',navy,white,True,10)
+    ws3.column_dimensions['A'].width = 30
+    for mi,mes in enumerate(vsetky_mesiace[1:], 2):
+        rok,miac = mes.split('-')
+        predch = vsetky_mesiace[vsetky_mesiace.index(mes)-1]
+        pr,pm = predch.split('-')
+        _acell(ws3,2,mi,f'{pm}/{pr}→{miac}/{rok}',navy,white,True,9)
+        ws3.column_dimensions[get_column_letter(mi)].width = 14
+    ws3.row_dimensions[2].height = 22
+
+    for ri,(k_nazov,d) in enumerate(sorted_klienti, 3):
+        bg = light if ri % 2 == 0 else white
+        _acell(ws3,ri,1,k_nazov,bg,'000000',True,10,'left')
+        for mi,mes in enumerate(vsetky_mesiace[1:], 2):
+            predch = vsetky_mesiace[vsetky_mesiace.index(mes)-1]
+            sek_teraz = d['mesiace'].get(mes, 0)
+            sek_pred  = d['mesiace'].get(predch, 0)
+            if sek_pred == 0 and sek_teraz == 0:
+                _acell(ws3,ri,mi,'—',bg,'CCCCCC',False,9)
+            elif sek_pred == 0:
+                _acell(ws3,ri,mi,'Nový',green_bg,green,True,9)
+            else:
+                diff_pct = round((sek_teraz - sek_pred) / sek_pred * 100, 1)
+                cell_bg = bg; cell_fg = '000000'
+                if diff_pct >= 30:
+                    cell_bg = orange_bg; cell_fg = orange
+                elif diff_pct >= 10:
+                    cell_bg = 'FEF9C3'; cell_fg = '78350F'
+                elif diff_pct <= -30:
+                    cell_bg = red_bg; cell_fg = red_fg
+                elif diff_pct <= -10:
+                    cell_bg = 'FEE2E2'; cell_fg = red_fg
+                elif -5 <= diff_pct <= 5:
+                    cell_bg = green_bg; cell_fg = green
+                znacka = '▲' if diff_pct > 0 else ('▼' if diff_pct < 0 else '=')
+                _acell(ws3,ri,mi,f'{znacka} {diff_pct:+.1f}%',cell_bg,cell_fg,abs(diff_pct)>=30,9)
+        ws3.row_dimensions[ri].height = 18
+
+    ws3.freeze_panes = 'B3'
+
+    # ── 4. SHEET: Extra práce – analýza ───────────────────────────────────────
+    ws4 = wb.create_sheet('4. Extra práca')
+
+    ws4.merge_cells('A1:F1')
+    _acell(ws4,1,1,f'Analýza extra práce  |  Export: {export_cas}',navy,white,True,13,'left')
+    ws4.row_dimensions[1].height = 28
+
+    extra_prace = defaultdict(lambda: {'sek': 0, 'pocet': 0, 'klienti': defaultdict(int)})
+    for z in vsetky_zaznamy:
+        k = z.klient.nazov if z.klient else 'Neznámy'
+        for cin in z.cinnosti:
+            if cin.typ == 'extra':
+                cin_sek = int((cin.cas_do - cin.cas_od).total_seconds()) if cin.cas_do and cin.cas_od else 0
+                popis_key = cin.popis.strip().lower()[:80] if cin.popis else ''
+                extra_prace[popis_key]['sek'] += cin_sek
+                extra_prace[popis_key]['pocet'] += 1
+                extra_prace[popis_key]['klienti'][k] += cin_sek
+
+    hlavicky4 = ['Popis extra činnosti','Celkový čas','Počet výskytov','Priemerný čas','Najčastejší klient','Iní klienti']
+    sirky4    = [40, 14, 14, 14, 28, 20]
+    for ci,(h,w) in enumerate(zip(hlavicky4,sirky4),1):
+        _acell(ws4,2,ci,h,navy,white,True,10)
+        ws4.column_dimensions[get_column_letter(ci)].width = w
+    ws4.row_dimensions[2].height = 22
+
+    sorted_extra = sorted(extra_prace.items(), key=lambda x: x[1]['sek'], reverse=True)
+    for ri,(popis,d) in enumerate(sorted_extra, 3):
+        bg = orange_bg if ri % 2 == 0 else 'FFFBF0'
+        avg_sek = d['sek'] // d['pocet'] if d['pocet'] > 0 else 0
+        top_klient = max(d['klienti'].items(), key=lambda x: x[1])[0] if d['klienti'] else '—'
+        ostatni = ', '.join(k for k in d['klienti'] if k != top_klient) or '—'
+        _acell(ws4,ri,1,popis.capitalize(),bg,'000000',False,10,'left')
+        _acell(ws4,ri,2,format_hod(d['sek']),bg,orange,True,10)
+        _acell(ws4,ri,3,d['pocet'],bg,'444444',False,10)
+        _acell(ws4,ri,4,format_hod(avg_sek),bg,'444444',False,10)
+        _acell(ws4,ri,5,top_klient,bg,'000000',False,10,'left')
+        _acell(ws4,ri,6,ostatni,bg,'888888',False,9,'left')
+        ws4.row_dimensions[ri].height = 18
+
+    ws4.freeze_panes = 'A3'
+
+    # ── 5. SHEET: Prehľad podľa zamestnancov ──────────────────────────────────
+    ws5 = wb.create_sheet('5. Zamestnanci')
+
+    ws5.merge_cells('A1:H1')
+    _acell(ws5,1,1,f'Prehľad podľa zamestnancov  |  Export: {export_cas}',navy,white,True,13,'left')
+    ws5.row_dimensions[1].height = 28
+
+    # Dáta per zamestnanec
+    zam_data = defaultdict(lambda: {'sek': 0, 'bezna_sek': 0, 'extra_sek': 0,
+                                     'zaznamov': 0, 'klienti': set(), 'mesiace': defaultdict(int)})
+    for z in vsetky_zaznamy:
+        uid = z.user_id
+        meno_u = z.user.meno if z.user else f'User#{uid}'
+        mes = z.datum.strftime('%Y-%m') if z.datum else '?'
+        sek = z.trvanie_sekundy or 0
+        zam_data[meno_u]['sek'] += sek
+        zam_data[meno_u]['zaznamov'] += 1
+        zam_data[meno_u]['mesiace'][mes] += sek
+        if z.klient:
+            zam_data[meno_u]['klienti'].add(z.klient.nazov)
+        for cin in z.cinnosti:
+            cin_sek = int((cin.cas_do - cin.cas_od).total_seconds()) if cin.cas_do and cin.cas_od else 0
+            if cin.typ == 'extra':
+                zam_data[meno_u]['extra_sek'] += cin_sek
+            else:
+                zam_data[meno_u]['bezna_sek'] += cin_sek
+
+    hlavicky5 = ['Zamestnanec','Celkové hodiny','Bežná práca','Extra práca',
+                 '% Extra','Počet záznamov','Počet klientov','Aktívne mesiace']
+    sirky5    = [28, 16, 16, 16, 10, 14, 14, 14]
+    for ci,(h,w) in enumerate(zip(hlavicky5,sirky5),1):
+        _acell(ws5,2,ci,h,navy,white,True,10)
+        ws5.column_dimensions[get_column_letter(ci)].width = w
+    ws5.row_dimensions[2].height = 22
+
+    sorted_zam = sorted(zam_data.items(), key=lambda x: x[1]['sek'], reverse=True)
+    for ri,(meno_u,d) in enumerate(sorted_zam, 3):
+        bg = light if ri % 2 == 0 else white
+        pct_extra = round(d['extra_sek']/d['sek']*100,1) if d['sek'] > 0 else 0
+        aktivne_mesiace = len([m for m in d['mesiace'] if d['mesiace'][m] > 0])
+        pct_bg = orange_bg if pct_extra >= 20 else (green_bg if pct_extra < 5 else bg)
+        pct_fg = orange if pct_extra >= 20 else (green if pct_extra < 5 else '444444')
+        _acell(ws5,ri,1,meno_u,bg,'000000',True,10,'left')
+        _acell(ws5,ri,2,format_hod(d['sek']),bg,blue2,True,10)
+        _acell(ws5,ri,3,format_hod(d['bezna_sek']),bg,green,False,10)
+        _acell(ws5,ri,4,format_hod(d['extra_sek']),bg if pct_extra<20 else orange_bg,
+               '000000' if pct_extra<20 else orange,False,10)
+        _acell(ws5,ri,5,f'{pct_extra}%',pct_bg,pct_fg,pct_extra>=20,10)
+        _acell(ws5,ri,6,d['zaznamov'],bg,'444444',False,10)
+        _acell(ws5,ri,7,len(d['klienti']),bg,'444444',False,10)
+        _acell(ws5,ri,8,aktivne_mesiace,bg,'444444',False,10)
+        ws5.row_dimensions[ri].height = 18
+
+    ws5.row_dimensions[2].height = 22
+    ws5.freeze_panes = 'A3'
+
+    # ── 6. SHEET: Zamestnanec × Klient krížová tabuľka ────────────────────────
+    ws6 = wb.create_sheet('6. Zam × Klient')
+
+    ws6.merge_cells(f'A1:{get_column_letter(len(sorted_klienti)+2)}1')
+    _acell(ws6,1,1,f'Hodiny: Zamestnanec × Klient  |  Export: {export_cas}',navy,white,True,13,'left')
+    ws6.row_dimensions[1].height = 28
+
+    _acell(ws6,2,1,'Zamestnanec',navy,white,True,10)
+    ws6.column_dimensions['A'].width = 28
+    _acell(ws6,2,2,'Celkom',navy,white,True,10)
+    ws6.column_dimensions['B'].width = 12
+    for ci,(k_nazov,_) in enumerate(sorted_klienti, 3):
+        _acell(ws6,2,ci,k_nazov,navy,white,True,9)
+        ws6.column_dimensions[get_column_letter(ci)].width = 14
+
+    # Kríž: zamestnanec × klient
+    zam_klient = defaultdict(lambda: defaultdict(int))
+    for z in vsetky_zaznamy:
+        meno_u = z.user.meno if z.user else f'User#{z.user_id}'
+        k = z.klient.nazov if z.klient else 'Neznámy'
+        zam_klient[meno_u][k] += z.trvanie_sekundy or 0
+
+    for ri,(meno_u,_) in enumerate(sorted_zam, 3):
+        bg = light if ri % 2 == 0 else white
+        celkom_u = zam_data[meno_u]['sek']
+        _acell(ws6,ri,1,meno_u,bg,'000000',True,10,'left')
+        _acell(ws6,ri,2,format_hod(celkom_u),bg,blue2,True,10)
+        for ci,(k_nazov,_) in enumerate(sorted_klienti, 3):
+            sek_uk = zam_klient[meno_u].get(k_nazov, 0)
+            cell_bg = bg
+            if sek_uk > 80*3600: cell_bg = orange_bg
+            elif sek_uk > 40*3600: cell_bg = 'FEF9C3'
+            elif sek_uk == 0: cell_bg = gray
+            _acell(ws6,ri,ci,format_hod(sek_uk) if sek_uk else '—',cell_bg,
+                   orange if sek_uk>80*3600 else ('000000' if sek_uk else 'BBBBBB'),
+                   sek_uk>80*3600,9)
+        ws6.row_dimensions[ri].height = 18
+
+    ws6.row_dimensions[2].height = 22
+    ws6.freeze_panes = 'C3'
+
+    # ── 7. SHEET: Fakturačný prehľad (bežná vs extra per klient/mesiac) ────────
+    ws7 = wb.create_sheet('7. Fakturácia')
+
+    ws7.merge_cells('A1:G1')
+    _acell(ws7,1,1,f'Fakturačný prehľad (bežná vs. extra práca)  |  Export: {export_cas}',
+           navy,white,True,13,'left')
+    ws7.row_dimensions[1].height = 28
+
+    hlavicky7 = ['Klient','Mesiac','Bežná práca (hod)','Extra práca (hod)',
+                 'Celkom (hod)','% Extra','Zamestnanci']
+    sirky7    = [30, 10, 18, 18, 14, 10, 36]
+    for ci,(h,w) in enumerate(zip(hlavicky7,sirky7),1):
+        _acell(ws7,2,ci,h,navy,white,True,10)
+        ws7.column_dimensions[get_column_letter(ci)].width = w
+    ws7.row_dimensions[2].height = 22
+
+    # Bezná a extra per klient+mesiac
+    fakt_data = defaultdict(lambda: defaultdict(lambda: {'bezna': 0, 'extra': 0, 'zam': set()}))
+    for z in vsetky_zaznamy:
+        k = z.klient.nazov if z.klient else 'Neznámy'
+        mes = z.datum.strftime('%Y-%m') if z.datum else '?'
+        meno_u = z.user.meno if z.user else f'User#{z.user_id}'
+        fakt_data[k][mes]['zam'].add(meno_u)
+        for cin in z.cinnosti:
+            cin_sek = int((cin.cas_do - cin.cas_od).total_seconds()) if cin.cas_do and cin.cas_od else 0
+            if cin.typ == 'extra':
+                fakt_data[k][mes]['extra'] += cin_sek
+            else:
+                fakt_data[k][mes]['bezna'] += cin_sek
+
+    ri7 = 3
+    for k_nazov,_ in sorted_klienti:
+        mesiace_k = sorted(fakt_data[k_nazov].keys())
+        for mes in mesiace_k:
+            d = fakt_data[k_nazov][mes]
+            celkom_sek = d['bezna'] + d['extra']
+            pct_extra = round(d['extra']/celkom_sek*100,1) if celkom_sek > 0 else 0
+            rok,miac = mes.split('-')
+            bg = light if ri7 % 2 == 0 else white
+            pct_bg = orange_bg if pct_extra >= 25 else bg
+            pct_fg = orange if pct_extra >= 25 else '444444'
+            _acell(ws7,ri7,1,k_nazov,bg,'000000',True,10,'left')
+            _acell(ws7,ri7,2,f'{miac}/{rok}',bg,'444444',False,10)
+            _acell(ws7,ri7,3,sek_na_hod(d['bezna']),bg,green,False,10)
+            _acell(ws7,ri7,4,sek_na_hod(d['extra']),pct_bg,pct_fg,False,10)
+            _acell(ws7,ri7,5,sek_na_hod(celkom_sek),bg,blue2,True,10)
+            _acell(ws7,ri7,6,f'{pct_extra}%',pct_bg,pct_fg,pct_extra>=25,10)
+            _acell(ws7,ri7,7,', '.join(sorted(d['zam'])),bg,'555555',False,9,'left')
+            ws7.row_dimensions[ri7].height = 18
+            ri7 += 1
+
+    ws7.freeze_panes = 'A3'
+
+    # ── Uloženie ──────────────────────────────────────────────────────────────
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    filename = f'analyza_dochadzka_{now_sk().strftime("%Y%m%d_%H%M")}.xlsx'
+    return send_file(output, as_attachment=True, download_name=filename,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
 # ── NASTAVENIA ────────────────────────────────────────────────────────────────
 
 @app.route('/nastavenia', methods=['GET', 'POST'])
@@ -663,10 +1066,11 @@ def _build_excel(zaznamy, meno):
             for ci in range(1,10):
                 c=ws.cell(row=row,column=ci); c.border=thin(); c.fill=fill
                 c.alignment=left; c.font=Font(name='Calibri',size=10)
+            # Klient sa zapisuje do každého riadku (vrátane rozdelených činností)
+            ws.cell(row=row,column=2).value=z.klient.nazov if z.klient else ''
             if ji==0:
                 ws.cell(row=row,column=1).value=z.datum.strftime('%d.%m.%Y') if z.datum else ''
                 ws.cell(row=row,column=1).alignment=center
-                ws.cell(row=row,column=2).value=z.klient.nazov if z.klient else ''
                 ws.cell(row=row,column=3).value=z.cas_start.strftime('%H:%M') if z.cas_start else ''
                 ws.cell(row=row,column=3).alignment=center
                 ws.cell(row=row,column=4).value=z.cas_stop.strftime('%H:%M') if z.cas_stop else ''
