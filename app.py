@@ -1,6 +1,9 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, jsonify, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from models import db, User, Klient, Zaznam, Cinnost, Uloha, Nastavenie
+from flask_wtf.csrf import CSRFProtect, CSRFError
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from models import db, User, Klient, Zaznam, Cinnost, Uloha, Nastavenie, LoginLog
 from datetime import datetime, timezone, timedelta
 import bcrypt
 import io
@@ -14,21 +17,44 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dochadzka-dev-key-zmenit')
 database_url = os.environ.get('DATABASE_URL', 'sqlite:///dochadzka.db')
 if 'postgresql' in database_url or database_url.startswith('postgres://'):
-    # Konvertuj na pg8000 dialekt (kompatibilný s Python 3.14)
     database_url = database_url.replace('postgres://', 'postgresql+pg8000://')
     database_url = database_url.replace('postgresql://', 'postgresql+pg8000://')
     if 'pg8000' not in database_url:
         database_url = database_url.replace('postgresql://', 'postgresql+pg8000://')
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['WTF_CSRF_TIME_LIMIT'] = 3600  # CSRF token platí 1 hodinu
 
 db.init_app(app)
+
+# CSRF ochrana
+csrf = CSRFProtect(app)
+
+# Rate limiter — ukladá pokusy v pamäti (pre prod možno redis, ale memory stačí)
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri='memory://'
+)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message = 'Pre prístup sa prosím prihláste.'
 login_manager.login_message_category = 'error'
+
+# ── Počítadlo neúspešných pokusov (v session) ────────────────────────────────
+LOGIN_MAX_POKUSY  = 4
+LOGIN_LOCKOUT_MIN = 15
+
+def get_ip():
+    return request.headers.get('X-Forwarded-For', request.remote_addr or 'unknown').split(',')[0].strip()
+
+@app.errorhandler(CSRFError)
+def csrf_error(e):
+    flash('Platnosť formulára vypršala. Skúste znova.', 'error')
+    return redirect(request.referrer or url_for('login'))
 
 def now_sk():
     return datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=2))).replace(tzinfo=None)
@@ -95,20 +121,77 @@ def registracia():
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
+
+    # Inicializácia session počítadla
+    if 'login_pokusy' not in session:
+        session['login_pokusy'] = 0
+        session['login_lockout_do'] = None
+
+    # Kontrola lockout
+    lockout_do = session.get('login_lockout_do')
+    if lockout_do:
+        lockout_dt = datetime.fromisoformat(lockout_do)
+        zostatok = (lockout_dt - now_sk()).total_seconds()
+        if zostatok > 0:
+            minuty = int(zostatok // 60) + 1
+            flash(f'Príliš veľa neúspešných pokusov. Skúste znova o {minuty} min.', 'error')
+            return render_template('login.html', lockout=True, lockout_minuty=minuty)
+        else:
+            # Lockout vypršal — reset
+            session['login_pokusy'] = 0
+            session['login_lockout_do'] = None
+
     if request.method == 'POST':
         email = request.form.get('email', '').strip().lower()
         heslo = request.form.get('heslo', '')
         user  = User.query.filter_by(email=email).first()
+
         if user and bcrypt.checkpw(heslo.encode('utf-8'), user.heslo.encode('utf-8')):
+            # Úspešné prihlásenie — reset počítadla
+            session['login_pokusy'] = 0
+            session['login_lockout_do'] = None
             login_user(user, remember=True)
+            # Log
+            log = LoginLog(user_id=user.id, email=email, akcia='login_ok',
+                           ip=get_ip(), created_at=now_sk())
+            db.session.add(log)
+            db.session.commit()
             return redirect(url_for('dashboard'))
-        flash('Nesprávny email alebo heslo.', 'error')
-    return render_template('login.html')
+        else:
+            # Neúspešný pokus
+            session['login_pokusy'] = session.get('login_pokusy', 0) + 1
+            pokusy = session['login_pokusy']
+            zostatok = LOGIN_MAX_POKUSY - pokusy
+            # Log neúspešného pokusu
+            uid = user.id if user else None
+            log = LoginLog(user_id=uid, email=email, akcia='login_fail',
+                           ip=get_ip(), created_at=now_sk())
+            db.session.add(log)
+            db.session.commit()
+
+            if zostatok <= 0:
+                lockout_cas = now_sk() + timedelta(minutes=LOGIN_LOCKOUT_MIN)
+                session['login_lockout_do'] = lockout_cas.isoformat()
+                flash(f'Príliš veľa neúspešných pokusov. Účet zablokovaný na {LOGIN_LOCKOUT_MIN} minút.', 'error')
+                return render_template('login.html', lockout=True, lockout_minuty=LOGIN_LOCKOUT_MIN)
+            else:
+                flash(f'Nesprávny email alebo heslo. Zostáva {zostatok} pokus{"y" if zostatok > 1 else ""}.', 'error')
+                return render_template('login.html', zostatok_pokusov=zostatok)
+
+    pokusy = session.get('login_pokusy', 0)
+    zostatok = max(0, LOGIN_MAX_POKUSY - pokusy)
+    return render_template('login.html', zostatok_pokusov=zostatok if pokusy > 0 else None)
 
 @app.route('/logout')
 @login_required
 def logout():
+    email = current_user.email
+    uid   = current_user.id
     logout_user()
+    log = LoginLog(user_id=uid, email=email, akcia='logout',
+                   ip=get_ip(), created_at=now_sk())
+    db.session.add(log)
+    db.session.commit()
     return redirect(url_for('login'))
 
 @app.route('/zabudnute-heslo', methods=['GET', 'POST'])
@@ -411,6 +494,15 @@ def admin():
         return redirect(url_for('dashboard'))
     users = User.query.order_by(User.meno).all()
     return render_template('admin.html', users=users)
+
+@app.route('/admin/logy')
+@login_required
+def admin_logy():
+    if not current_user.is_admin:
+        flash('Prístup zamietnutý.', 'error')
+        return redirect(url_for('dashboard'))
+    logy = LoginLog.query.order_by(LoginLog.created_at.desc()).limit(200).all()
+    return render_template('admin_logy.html', logy=logy)
 
 @app.route('/admin/vykaz/<int:user_id>')
 @login_required

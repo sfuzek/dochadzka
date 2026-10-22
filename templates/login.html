@@ -16,15 +16,31 @@
     {% endwith %}
 
     <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label>E-mail</label>
-        <input type="email" name="email" placeholder="vas@email.sk" required autofocus>
+        <input type="email" name="email" placeholder="vas@email.sk" required autofocus
+               {% if lockout %}disabled{% endif %}>
       </div>
       <div class="form-group">
         <label>Heslo</label>
-        <input type="password" name="heslo" placeholder="••••••••" required>
+        <input type="password" name="heslo" placeholder="••••••••" required
+               {% if lockout %}disabled{% endif %}>
       </div>
-      <button type="submit" class="btn btn-primary btn-full btn-lg" style="margin-top:8px">
+      {% if zostatok_pokusov is not none %}
+      <div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;
+                  margin-bottom:12px;font-size:13px;color:#92400E;display:flex;align-items:center;gap:8px;">
+        ⚠ Zostáva <strong>{{ zostatok_pokusov }} pokus{{ 'y' if zostatok_pokusov > 1 else '' }}</strong> pred zablokovaním na {{ 15 }} minút.
+      </div>
+      {% endif %}
+      {% if lockout %}
+      <div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 14px;
+                  margin-bottom:12px;font-size:13px;color:#991B1B;display:flex;align-items:center;gap:8px;">
+        🔒 Prihlásenie zablokované na <strong>{{ lockout_minuty }} min</strong>. Skúste neskôr.
+      </div>
+      {% endif %}
+      <button type="submit" class="btn btn-primary btn-full btn-lg" style="margin-top:8px"
+              {% if lockout %}disabled style="opacity:.5;cursor:not-allowed"{% endif %}>
         Prihlásiť sa
       </button>
     </form>

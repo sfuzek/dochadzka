@@ -201,5 +201,22 @@ td { padding: 11px 14px; vertical-align: middle; }
 </head>
 <body>
 {% block body %}{% endblock %}
+<script>
+// Auto-inject CSRF token do všetkých POST formulárov
+(function() {
+  var token = "{{ csrf_token() }}";
+  document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('form[method="POST"], form[method="post"]').forEach(function(form) {
+      if (!form.querySelector('[name="csrf_token"]')) {
+        var inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'csrf_token';
+        inp.value = token;
+        form.appendChild(inp);
+      }
+    });
+  });
+})();
+</script>
 </body>
 </html>

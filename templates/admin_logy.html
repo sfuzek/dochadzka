@@ -1,0 +1,103 @@
+{% extends 'base.html' %}
+{% block title %}Log prihlásení — Dochádzka{% endblock %}
+{% block body %}
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <h1>⏱ Dochádzka</h1>
+      <p>Systém evidencie</p>
+    </div>
+    <div class="sidebar-user">
+      <strong>{{ current_user.meno }}</strong>
+      {{ current_user.email }}
+      <span class="badge-admin">ADMIN</span>
+    </div>
+    <nav>
+      <a href="{{ url_for('dashboard') }}" class="nav-link"><span class="nav-icon">🏠</span> Dashboard</a>
+      <a href="{{ url_for('vykaz') }}" class="nav-link"><span class="nav-icon">📊</span> Výkaz</a>
+      <a href="{{ url_for('klienti') }}" class="nav-link"><span class="nav-icon">👥</span> Klienti</a>
+      <a href="{{ url_for('ulohy') }}" class="nav-link"><span class="nav-icon">✅</span> Úlohy</a>
+      <div class="nav-section">Admin</div>
+      <a href="{{ url_for('admin') }}" class="nav-link"><span class="nav-icon">⚙</span> Správa užívateľov</a>
+      <a href="{{ url_for('admin_logy') }}" class="nav-link active"><span class="nav-icon">🔐</span> Log prihlásení</a>
+    </nav>
+    <div class="sidebar-footer">
+      <a href="{{ url_for('nastavenia') }}" class="nav-link-settings"><span>⚙</span> Nastavenia</a>
+      <a href="{{ url_for('logout') }}">Odhlásiť sa →</a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <h2>🔐 Log prihlásení a odhlásení</h2>
+    </div>
+
+    <div class="content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-wrap" style="padding:0;margin-bottom:16px">
+            {% for cat, msg in messages %}
+              <div class="flash {{ cat }}">{{ msg }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Posledných {{ logy|length }} záznamov</h3>
+          <span class="text-muted text-sm">Automaticky sa zobrazuje 200 najnovších</span>
+        </div>
+
+        {% if logy %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Čas</th>
+                <th>Akcia</th>
+                <th>E-mail</th>
+                <th>Meno</th>
+                <th>IP adresa</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for log in logy %}
+              <tr>
+                <td style="white-space:nowrap;font-size:12px;color:var(--muted)">
+                  {{ log.created_at.strftime('%d.%m.%Y %H:%M:%S') if log.created_at else '—' }}
+                </td>
+                <td>
+                  {% if log.akcia == 'login_ok' %}
+                    <span class="badge badge-green">✔ Prihlásenie</span>
+                  {% elif log.akcia == 'login_fail' %}
+                    <span class="badge badge-red">✘ Zlyhanie</span>
+                  {% elif log.akcia == 'logout' %}
+                    <span class="badge badge-gray">↩ Odhlásenie</span>
+                  {% else %}
+                    <span class="badge badge-orange">{{ log.akcia }}</span>
+                  {% endif %}
+                </td>
+                <td style="font-size:13px">{{ log.email }}</td>
+                <td style="font-size:13px;color:var(--muted)">
+                  {{ log.user.meno if log.user else '—' }}
+                </td>
+                <td style="font-size:12px;color:var(--muted);font-family:monospace">
+                  {{ log.ip or '—' }}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+          <div class="icon">🔐</div>
+          <p>Žiadne záznamy</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

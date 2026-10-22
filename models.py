@@ -86,6 +86,18 @@ class Uloha(db.Model):
     created_at      = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class LoginLog(db.Model):
+    __tablename__ = 'login_log'
+    id         = db.Column(db.Integer, primary_key=True)
+    user_id    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    email      = db.Column(db.String(150), nullable=False)
+    akcia      = db.Column(db.String(20), nullable=False)  # 'login_ok', 'login_fail', 'logout'
+    ip         = db.Column(db.String(45), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref='login_logy', lazy=True, foreign_keys=[user_id])
+
+
 class Nastavenie(db.Model):
     __tablename__ = 'nastavenia'
     id      = db.Column(db.Integer, primary_key=True)
