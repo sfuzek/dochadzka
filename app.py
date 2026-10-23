@@ -3,7 +3,7 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from flask_wtf.csrf import CSRFProtect, CSRFError
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from models import db, User, Klient, Zaznam, Cinnost, Uloha, Nastavenie, LoginLog, Dovolenka, PredefinovanaCinnost
+from models import db, User, Klient, Zaznam, Cinnost, Uloha, Nastavenie, LoginLog, Dovolenka, PredefinovanaCinnost, ZiadostOZmenu
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 import bcrypt
@@ -72,6 +72,7 @@ with app.app_context():
         "ALTER TABLE cinnosti ADD COLUMN IF NOT EXISTS poznamka TEXT DEFAULT ''",
         "ALTER TABLE dovolenky ADD COLUMN IF NOT EXISTS poznamka VARCHAR(200) DEFAULT ''",
         "ALTER TABLE predefinovane_cinnosti ADD COLUMN IF NOT EXISTS aktivna BOOLEAN DEFAULT TRUE",
+        # ziadosti_o_zmenu vytvorí db.create_all() ako nová tabuľka
     ]
     for sql in _migrations:
         try:
@@ -615,6 +616,45 @@ def zmazat_predefinovanu(cin_id):
     return redirect(request.referrer or url_for('dashboard'))
 
 
+# ── ŽIADOSTI O ZMENU ──────────────────────────────────────────────────────────
+
+@app.route('/cinnost/<int:cin_id>/ziadost', methods=['POST'])
+@login_required
+def poslat_ziadost(cin_id):
+    """Zamestnanec odošle žiadosť o zmenu konkrétnej činnosti."""
+    cin = Cinnost.query.get_or_404(cin_id)
+    # Overenie, že činnosť patrí aktuálnemu používateľovi
+    if cin.zaznam.user_id != current_user.id:
+        return jsonify({'error': 'Prístup zamietnutý'}), 403
+    text = request.form.get('text', '').strip()
+    if not text:
+        flash('Zadajte text žiadosti.', 'error')
+        return redirect(url_for('vykaz'))
+    # Existujúca nevybavená žiadosť — prepíšeme
+    existujuca = ZiadostOZmenu.query.filter_by(cinnost_id=cin_id, vybavena=False).first()
+    if existujuca:
+        existujuca.text = text
+        existujuca.created_at = datetime.utcnow()
+    else:
+        z = ZiadostOZmenu(cinnost_id=cin_id, user_id=current_user.id, text=text)
+        db.session.add(z)
+    db.session.commit()
+    flash('Žiadosť o zmenu odoslaná.', 'success')
+    return redirect(url_for('vykaz'))
+
+@app.route('/admin/cinnost/<int:cin_id>/vybavit_ziadost', methods=['POST'])
+@login_required
+def vybavit_ziadost(cin_id):
+    """Správca označí žiadosť o zmenu ako vybavenú."""
+    if not current_user.is_admin:
+        return jsonify({'error': 'Prístup zamietnutý'}), 403
+    ziadost = ZiadostOZmenu.query.filter_by(cinnost_id=cin_id, vybavena=False).first()
+    if ziadost:
+        ziadost.vybavena = True
+        db.session.commit()
+    return redirect(request.referrer or url_for('admin'))
+
+
 # ── ADMIN ─────────────────────────────────────────────────────────────────────
 
 @app.route('/admin')
@@ -666,7 +706,7 @@ def admin_export(user_id):
     klient_id = request.args.get('klient_id', '')
     zaznamy   = _filter_zaznamy(user_id, datum_od, datum_do, klient_id)\
                     .order_by(Zaznam.datum.asc(), Zaznam.cas_start.asc()).all()
-    output   = _build_excel(zaznamy, user.meno)
+    output   = _build_excel(zaznamy, user.meno, include_ziadosti=True)
     filename = f'dochadzka_{user.meno.replace(" ","_")}_{now_sk().strftime("%Y%m%d")}.xlsx'
     return send_file(output, as_attachment=True, download_name=filename,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -1158,8 +1198,10 @@ def oznacit_hotovo(uloha_id):
 
 # ── EXCEL BUILDER ─────────────────────────────────────────────────────────────
 
-def _build_excel(zaznamy, meno):
-    # Stĺpce: A=Dátum B=Klient C=Začiatok D=Koniec E=Celkový čas F=Typ G=Činnosť H=Poznámka
+def _build_excel(zaznamy, meno, include_ziadosti=False):
+    # Stĺpce: A=Dátum B=Klient C=Začiatok D=Koniec E=Celkový čas F=Typ G=Činnosť H=Poznámka [I=Žiadosť o zmenu]
+    num_cols = 9 if include_ziadosti else 8
+    last_col_letter = get_column_letter(num_cols)
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = 'Dochádzka'
@@ -1173,13 +1215,13 @@ def _build_excel(zaznamy, meno):
         left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
         top=Side(style='thin', color='CCCCCC'),  bottom=Side(style='thin', color='CCCCCC'))
 
-    # Nadpis (8 stĺpcov)
-    ws.merge_cells('A1:H1')
+    # Nadpis
+    ws.merge_cells(f'A1:{last_col_letter}1')
     ws['A1'] = f'Výkaz dochádzky — {meno}'
     ws['A1'].font = Font(bold=True, size=15, color=navy, name='Calibri')
     ws['A1'].alignment = center
     ws.row_dimensions[1].height = 32
-    ws.merge_cells('A2:H2')
+    ws.merge_cells(f'A2:{last_col_letter}2')
     ws['A2'] = f'Exportované: {now_sk().strftime("%d.%m.%Y %H:%M")}'
     ws['A2'].font = Font(size=9, color='888888', name='Calibri')
     ws['A2'].alignment = center
@@ -1187,6 +1229,9 @@ def _build_excel(zaznamy, meno):
 
     cols   = ['Dátum', 'Klient', 'Začiatok', 'Koniec', 'Celkový čas', 'Typ', 'Činnosť', 'Poznámka']
     widths = [14,       22,       11,          11,        14,            12,    38,          30]
+    if include_ziadosti:
+        cols.append('Žiadosť o zmenu')
+        widths.append(40)
     for ci, (h, w) in enumerate(zip(cols, widths), 1):
         c = ws.cell(row=3, column=ci, value=h)
         c.font = hdr_font; c.fill = hdr_fill
@@ -1213,7 +1258,7 @@ def _build_excel(zaznamy, meno):
         yellow_fill = PatternFill('solid', start_color='FFFF00')
 
         for ji, cin in enumerate(cinnosti):
-            for ci in range(1, 9):
+            for ci in range(1, num_cols + 1):
                 c = ws.cell(row=row, column=ci)
                 c.border = thin(); c.fill = fill
                 c.alignment = left; c.font = Font(name='Calibri', size=10)
@@ -1256,6 +1301,14 @@ def _build_excel(zaznamy, meno):
                 ws.cell(row=row, column=7).value = cin.popis
                 # Poznámka k činnosti (stĺpec H)
                 ws.cell(row=row, column=8).value = getattr(cin, 'poznamka', '') or ''
+                # Žiadosť o zmenu (stĺpec I) — iba v admin exporte
+                if include_ziadosti and cin:
+                    ziadost = ZiadostOZmenu.query.filter_by(cinnost_id=cin.id, vybavena=False).first()
+                    if ziadost:
+                        c9 = ws.cell(row=row, column=9)
+                        c9.value = ziadost.text
+                        c9.fill = PatternFill('solid', start_color='FEE2E2')  # svetločervená
+                        c9.font = Font(name='Calibri', size=10, color='991B1B')
             ws.row_dimensions[row].height = 18
             row += 1
 
@@ -1276,7 +1329,7 @@ def _build_excel(zaznamy, meno):
     c_sum.fill = PatternFill('solid', start_color=blue2)
     c_sum.alignment = center
     c_sum.border = thin()
-    ws.merge_cells(f'F{row}:H{row}')
+    ws.merge_cells(f'F{row}:{last_col_letter}{row}')
     ws.row_dimensions[row].height = 24
     ws.freeze_panes = 'A4'
     output = io.BytesIO(); wb.save(output); output.seek(0)

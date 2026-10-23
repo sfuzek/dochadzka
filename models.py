@@ -124,6 +124,20 @@ class Dovolenka(db.Model):
     user = db.relationship('User', backref='dovolenky', lazy=True)
 
 
+class ZiadostOZmenu(db.Model):
+    """Žiadosť zamestnanca o zmenu konkrétnej činnosti."""
+    __tablename__ = 'ziadosti_o_zmenu'
+    id         = db.Column(db.Integer, primary_key=True)
+    cinnost_id = db.Column(db.Integer, db.ForeignKey('cinnosti.id'), nullable=False)
+    user_id    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    text       = db.Column(db.Text, nullable=False)
+    vybavena   = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    cinnost = db.relationship('Cinnost', backref=db.backref('ziadosti', lazy=True))
+    user    = db.relationship('User', backref='ziadosti_o_zmenu', lazy=True)
+
+
 class Nastavenie(db.Model):
     __tablename__ = 'nastavenia'
     id      = db.Column(db.Integer, primary_key=True)

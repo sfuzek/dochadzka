@@ -89,13 +89,30 @@
                 </summary>
                 <div style="margin-top:6px">
                   {% for c in z.cinnosti %}
-                  <div class="cinnost-item" style="margin-bottom:4px;font-size:12px">
-                    <span>📌 {{ c.popis }}</span>
-                    <span class="cinnost-time">
-                      {{ c.cas_od.strftime('%H:%M') }} –
-                      {% if c.cas_do %}{{ c.cas_do.strftime('%H:%M') }}{% else %}—{% endif %}
-                      ({{ c.trvanie_format }})
-                    </span>
+                  {% set pending = c.ziadosti|selectattr('vybavena','equalto',false)|list %}
+                  <div class="cinnost-item" style="margin-bottom:6px;font-size:12px;display:flex;align-items:center;gap:6px;justify-content:space-between">
+                    <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0">
+                      <span>📌 {{ c.popis }}</span>
+                      <span class="cinnost-time" style="flex-shrink:0">
+                        {{ c.cas_od.strftime('%H:%M') }} –
+                        {% if c.cas_do %}{{ c.cas_do.strftime('%H:%M') }}{% else %}—{% endif %}
+                        ({{ c.trvanie_format }})
+                      </span>
+                      {% if pending %}
+                      <span class="ziadost-dot" data-text="{{ pending[0].text|e }}"
+                            style="display:inline-block;width:10px;height:10px;border-radius:50%;
+                                   background:#ef4444;flex-shrink:0;cursor:pointer;
+                                   position:relative;animation:pulse-red 1.5s infinite">
+                      </span>
+                      {% endif %}
+                    </div>
+                    {% if pending %}
+                    <form method="POST" action="{{ url_for('vybavit_ziadost', cin_id=c.id) }}" style="flex-shrink:0">
+                      <button type="submit" class="btn btn-xs"
+                              style="background:#16a34a;color:#fff;padding:2px 7px;font-size:10px;border:none;cursor:pointer;border-radius:4px"
+                              title="Označiť žiadosť ako vybavenú">✓ Vybavené</button>
+                    </form>
+                    {% endif %}
                   </div>
                   {% endfor %}
                 </div>
@@ -117,4 +134,41 @@
   </div>
   {% endif %}
 </div>
+
+<!-- Tooltip pre žiadosť o zmenu + animácia červenej bodky -->
+<div id="ziadostTooltip"
+     style="display:none;position:fixed;z-index:9999;background:#1e2533;border:1px solid #ef4444;
+            border-radius:8px;padding:10px 14px;max-width:300px;font-size:12px;line-height:1.5;
+            color:#fca5a5;box-shadow:0 4px 16px rgba(239,68,68,.3);pointer-events:none"></div>
+
+<style>
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,.6); }
+  50%       { box-shadow: 0 0 0 5px rgba(239,68,68,0); }
+}
+</style>
+
+<script>
+(function() {
+  var tooltip = document.getElementById('ziadostTooltip');
+  document.querySelectorAll('.ziadost-dot').forEach(function(dot) {
+    dot.addEventListener('mouseenter', function(e) {
+      tooltip.textContent = '📝 Žiadosť: ' + this.dataset.text;
+      tooltip.style.display = 'block';
+      positionTooltip(e);
+    });
+    dot.addEventListener('mousemove', positionTooltip);
+    dot.addEventListener('mouseleave', function() {
+      tooltip.style.display = 'none';
+    });
+  });
+  function positionTooltip(e) {
+    var x = e.clientX + 14, y = e.clientY + 14;
+    if (x + 310 > window.innerWidth) x = e.clientX - 310;
+    if (y + 100 > window.innerHeight)  y = e.clientY - 90;
+    tooltip.style.left = x + 'px';
+    tooltip.style.top  = y + 'px';
+  }
+})();
+</script>
 {% endblock %}

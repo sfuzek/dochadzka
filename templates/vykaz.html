@@ -153,14 +153,40 @@
               <summary style="cursor:pointer;font-size:12px;color:var(--blue)">{{ z.cinnosti|length }} činností</summary>
               <div style="margin-top:6px">
                 {% for c in z.cinnosti %}
-                <div class="cinnost-item" style="font-size:12px">
-                  {% if c.typ == 'extra' %}
-                  <span class="badge badge-orange" style="font-size:10px;padding:2px 6px">🟡 Extra</span>
-                  {% else %}
-                  <span class="badge badge-blue" style="font-size:10px;padding:2px 6px">🟦 Bežná</span>
-                  {% endif %}
-                  <span>{{ c.popis }}</span>
-                  <span class="cinnost-time">{{ c.cas_od.strftime('%H:%M') }} – {% if c.cas_do %}{{ c.cas_do.strftime('%H:%M') }}{% else %}—{% endif %} ({{ c.trvanie_format }})</span>
+                <div class="cinnost-item" style="font-size:12px;display:flex;align-items:center;gap:6px;justify-content:space-between;margin-bottom:4px">
+                  <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0">
+                    {% if c.typ == 'extra' %}
+                    <span class="badge badge-orange" style="font-size:10px;padding:2px 6px;flex-shrink:0">🟡 Extra</span>
+                    {% else %}
+                    <span class="badge badge-blue" style="font-size:10px;padding:2px 6px;flex-shrink:0">🟦 Bežná</span>
+                    {% endif %}
+                    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ c.popis }}</span>
+                    <span class="cinnost-time" style="flex-shrink:0">{{ c.cas_od.strftime('%H:%M') }} – {% if c.cas_do %}{{ c.cas_do.strftime('%H:%M') }}{% else %}—{% endif %} ({{ c.trvanie_format }})</span>
+                    {% set pending_ziadost = c.ziadosti|selectattr('vybavena','equalto',false)|list %}
+                    {% if pending_ziadost %}
+                    <span title="Žiadosť o zmenu: {{ pending_ziadost[0].text }}" style="cursor:help;font-size:14px;flex-shrink:0">✅</span>
+                    {% endif %}
+                  </div>
+                  <!-- ... menu -->
+                  <div style="position:relative;flex-shrink:0">
+                    <button type="button"
+                            onclick="toggleZiadostMenu({{ c.id }})"
+                            style="background:var(--bg,#161b27);border:1px solid var(--border,#2a3142);
+                                   border-radius:6px;padding:2px 7px;font-size:12px;cursor:pointer;
+                                   color:var(--text-muted,#8891a4);font-family:inherit;line-height:1.4">…</button>
+                    <div id="zmenu{{ c.id }}"
+                         style="display:none;position:absolute;right:0;top:100%;z-index:50;
+                                background:var(--card-bg,#1e2533);border:1px solid var(--border,#2a3142);
+                                border-radius:8px;padding:4px 0;min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,.4)">
+                      <button type="button"
+                              onclick="otvoritZiadost({{ c.id }}, '{{ c.popis|e }}')"
+                              style="display:block;width:100%;text-align:left;padding:8px 14px;
+                                     background:none;border:none;font-size:13px;cursor:pointer;
+                                     color:var(--text,#e2e8f0);font-family:inherit">
+                        📝 Žiadosť o zmenu
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 {% endfor %}
               </div>
@@ -224,11 +250,62 @@
   {% endif %}
 </div>
 
+<!-- ── ŽIADOSŤ O ZMENU MODAL ─────────────────────────────────────────────── -->
+<div id="ziadostModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--card-bg,#1e2533);border:1px solid var(--border,#2a3142);border-radius:14px;padding:28px 32px;width:min(440px,95vw)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="margin:0;font-size:17px">📝 Žiadosť o zmenu</h3>
+      <button onclick="document.getElementById('ziadostModal').style.display='none'"
+              style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text-muted,#8891a4);line-height:1">×</button>
+    </div>
+    <div id="ziadostCinnostNazov" style="font-size:13px;color:var(--text-muted,#8891a4);margin-bottom:14px;padding:8px 12px;background:var(--bg,#161b27);border-radius:8px"></div>
+    <form id="ziadostForm" method="POST" action="">
+      <div class="form-group" style="margin-bottom:14px">
+        <label style="font-size:12px;margin-bottom:6px;display:block">Popíšte požadovanú zmenu</label>
+        <textarea id="ziadostText" name="text" rows="4" required
+                  placeholder="napr. Opravte čas – začiatok bol o 8:30 nie 9:00"
+                  style="width:100%;font-size:13px;resize:vertical"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%">📨 Odoslať žiadosť</button>
+    </form>
+  </div>
+</div>
+
 <script>
 function vyberCinVykaz(zid, nazov, typ) {
   document.getElementById('popisV' + zid).value = nazov;
   var r = document.getElementById('typV' + zid + (typ === 'extra' ? 'extra' : 'bezna'));
   if (r) r.checked = true;
 }
+
+function toggleZiadostMenu(cinId) {
+  var menu = document.getElementById('zmenu' + cinId);
+  // Zatvori vsetky ostatne menu
+  document.querySelectorAll('[id^="zmenu"]').forEach(function(m) {
+    if (m.id !== 'zmenu' + cinId) m.style.display = 'none';
+  });
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+function otvoritZiadost(cinId, popis) {
+  document.getElementById('zmenu' + cinId).style.display = 'none';
+  document.getElementById('ziadostCinnostNazov').textContent = '🟦 ' + popis;
+  document.getElementById('ziadostText').value = '';
+  document.getElementById('ziadostForm').action = '/cinnost/' + cinId + '/ziadost';
+  document.getElementById('ziadostModal').style.display = 'flex';
+  document.getElementById('ziadostText').focus();
+}
+
+// Zavri menu pri kliknutí mimo
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('[id^="zmenu"]') && !e.target.closest('button[onclick^="toggleZiadostMenu"]')) {
+    document.querySelectorAll('[id^="zmenu"]').forEach(function(m) { m.style.display = 'none'; });
+  }
+});
+
+// Zatvori modal pri kliknutí mimo
+document.getElementById('ziadostModal').addEventListener('click', function(e) {
+  if (e.target === this) this.style.display = 'none';
+});
 </script>
 {% endblock %}
