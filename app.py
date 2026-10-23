@@ -66,6 +66,19 @@ def load_user(user_id):
 
 with app.app_context():
     db.create_all()
+    # Migrácie — pridaj stĺpce ak neexistujú (bezpečné opakovane spustiť)
+    from sqlalchemy import text
+    _migrations = [
+        "ALTER TABLE cinnosti ADD COLUMN IF NOT EXISTS poznamka TEXT DEFAULT ''",
+        "ALTER TABLE dovolenky ADD COLUMN IF NOT EXISTS poznamka VARCHAR(200) DEFAULT ''",
+        "ALTER TABLE predefinovane_cinnosti ADD COLUMN IF NOT EXISTS aktivna BOOLEAN DEFAULT TRUE",
+    ]
+    for sql in _migrations:
+        try:
+            db.session.execute(text(sql))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
 
 # ── AUTH ──────────────────────────────────────────────────────────────────────
