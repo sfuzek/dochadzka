@@ -115,52 +115,31 @@
     </div>
   </div>
 
-  <!-- Panel zmeny klienta -->
-  <div id="panelZmenitKlienta" style="display:none;margin-top:12px;background:rgba(0,0,0,0.25);
-       border-radius:10px;padding:14px;border:1px solid rgba(255,255,255,0.15)">
-    <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">
-      🔄 Prepnúť na iného klienta
+  <!-- Panel zmeny klienta — iba výber nového klienta, popis/typ sa berie z hlavného poľa hore -->
+  <div id="panelZmenitKlienta" style="display:none;margin-top:10px;background:rgba(0,0,0,0.22);
+       border-radius:10px;padding:12px 14px;border:1px solid rgba(255,255,255,0.15)">
+    <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:8px;">
+      🔄 Prepnúť na iného klienta — popis a typ sa uloží pre <strong style="color:rgba(255,255,255,0.75)">{{ aktivny.klient.nazov }}</strong>
     </div>
-    <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:10px;">
-      Zadajte čo ste robili pre <strong style="color:rgba(255,255,255,0.8)">{{ aktivny.klient.nazov }}</strong> — potom vyberte nového klienta. Nový klient začne bez popisu, ten doplníte až pri zastavení alebo rozdelení.
-    </div>
-    <form method="POST" action="{{ url_for('zmenit_klienta') }}" onsubmit="return validateZmenaKlienta(this)">
+    <form method="POST" action="{{ url_for('zmenit_klienta') }}" onsubmit="return prenesDoZmenu(this)">
       <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
-      <!-- Typ činnosti pre STARÉHO klienta -->
-      <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:6px;">Typ práce pre {{ aktivny.klient.nazov }}:</div>
-      <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;
-                      background:rgba(255,255,255,0.1);border:1.5px solid rgba(255,255,255,0.2);
-                      border-radius:7px;padding:6px 12px;font-size:12px;color:#fff;" id="labelZBezna">
-          <input type="radio" name="typ" value="bezna" id="typZBezna" onchange="highlightZTyp()"
-                 style="accent-color:#60A5FA;width:14px;height:14px;">
-          🟦 Bežná práca
-        </label>
-        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;
-                      background:rgba(255,255,255,0.1);border:1.5px solid rgba(255,255,255,0.2);
-                      border-radius:7px;padding:6px 12px;font-size:12px;color:#fff;" id="labelZExtra">
-          <input type="radio" name="typ" value="extra" id="typZExtra" onchange="highlightZTyp()"
-                 style="accent-color:#FBBF24;width:14px;height:14px;">
-          🟡 Extra práca
-        </label>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <input type="text" name="popis" id="popisZmena"
-               placeholder="Popis čo ste robili pre {{ aktivny.klient.nazov }} (povinné)"
-               style="flex:2;min-width:180px;background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);color:#fff;font-size:13px;">
+      <input type="hidden" name="popis" id="hiddenPopisBZmena">
+      <input type="hidden" name="typ"   id="hiddenTypZmena">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <select name="novy_klient_id" id="novyKlient"
-                style="flex:1;min-width:140px;background:#1e2533;border:1.5px solid rgba(255,255,255,0.25);color:#e2e8f0;font-size:13px;border-radius:8px;padding:8px 10px;">
-          <option value="" style="background:#1e2533;color:#e2e8f0">— Prepnúť na klienta —</option>
+                style="flex:1;min-width:160px;background:#1e2533;border:1.5px solid rgba(255,255,255,0.25);
+                       color:#e2e8f0;font-size:13px;border-radius:8px;padding:9px 10px;">
+          <option value="" style="background:#1e2533;color:#e2e8f0">— Vybrať klienta —</option>
           {% for k in klienti %}
           {% if k.id != aktivny.klient_id %}
           <option value="{{ k.id }}" style="background:#1e2533;color:#e2e8f0">{{ k.nazov }}</option>
           {% endif %}
           {% endfor %}
         </select>
-        <button type="submit" class="btn btn-warning">🔄 Prepnúť</button>
+        <button type="submit" class="btn btn-warning" style="white-space:nowrap">🔄 Prepnúť</button>
       </div>
       <div id="chybaZmena" style="display:none;color:#FCA5A5;font-size:12px;margin-top:6px;">
-        ⚠ Vyplňte popis a vyberte typ pre {{ aktivny.klient.nazov }}, potom vyberte nového klienta.
+        ⚠ Vyplňte popis a vyberte typ (Bežná / Extra) v hlavnom poli vyššie, potom vyberte klienta.
       </div>
     </form>
   </div>
@@ -310,28 +289,34 @@ setInterval(updateTimer, 1000);
 
 function toggleZmenitKlienta() {
   const panel = document.getElementById('panelZmenitKlienta');
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  const isHidden = panel.style.display === 'none' || panel.style.display === '';
+  panel.style.display = isHidden ? 'block' : 'none';
+  // Ak otvárame panel, skroluj k nemu
+  if (isHidden) panel.scrollIntoView({behavior:'smooth', block:'nearest'});
 }
 
-function highlightZTyp() {
-  const bezna = document.getElementById('typZBezna');
-  const extra = document.getElementById('typZExtra');
-  document.getElementById('labelZBezna').style.borderColor = bezna.checked ? '#60A5FA' : 'rgba(255,255,255,0.2)';
-  document.getElementById('labelZBezna').style.background  = bezna.checked ? 'rgba(96,165,250,0.2)' : 'rgba(255,255,255,0.1)';
-  document.getElementById('labelZExtra').style.borderColor = extra.checked ? '#FBBF24' : 'rgba(255,255,255,0.2)';
-  document.getElementById('labelZExtra').style.background  = extra.checked ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.1)';
-}
-
-function validateZmenaKlienta(form) {
-  const popis  = form.querySelector('[name="popis"]');
-  const typ    = form.querySelector('[name="typ"]:checked');
+// Pri kliknutí na Prepnúť: skopíruje popis+typ z hlavného formulára do hidden inputov zmena-formu
+function prenesDoZmenu(form) {
+  const popis  = document.getElementById('popisCinnosti').value.trim();
+  const typEl  = document.querySelector('[name="typ_cinnost"]:checked');
   const klient = form.querySelector('[name="novy_klient_id"]');
   const chyba  = document.getElementById('chybaZmena');
-  if (!popis.value.trim() || !typ || !klient.value) {
+
+  if (!popis || !typEl || !klient.value) {
     chyba.style.display = 'block';
+    if (!popis) {
+      document.getElementById('popisCinnosti').style.borderColor = '#F87171';
+      document.getElementById('popisCinnosti').focus();
+    }
+    if (!typEl) {
+      document.getElementById('labelBezna').style.borderColor = '#F87171';
+      document.getElementById('labelExtra').style.borderColor = '#F87171';
+    }
     return false;
   }
   chyba.style.display = 'none';
+  document.getElementById('hiddenPopisBZmena').value = popis;
+  document.getElementById('hiddenTypZmena').value    = typEl.value;
   return true;
 }
 
