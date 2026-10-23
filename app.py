@@ -522,12 +522,34 @@ def vykaz():
 @app.route('/vykaz/export')
 @login_required
 def export_excel():
+    from datetime import date, timedelta as td
     datum_od  = request.args.get('datum_od', '')
     datum_do  = request.args.get('datum_do', '')
     klient_id = request.args.get('klient_id', '')
     zaznamy   = _filter_zaznamy(current_user.id, datum_od, datum_do, klient_id)\
                     .order_by(Zaznam.datum.asc(), Zaznam.cas_start.asc()).all()
-    output = _build_excel(zaznamy, current_user.meno)
+    # Dovolenkové dni (bez pracovných dní)
+    pracovne_dni = set(z.datum for z in Zaznam.query.filter_by(user_id=current_user.id).all())
+    dovolenky_db = Dovolenka.query.filter_by(user_id=current_user.id).all()
+    dov_dni = []
+    for d in dovolenky_db:
+        cur = d.datum_od
+        while cur <= d.datum_do:
+            if cur not in pracovne_dni:
+                # Filtruj podľa export filtra ak je nastavený
+                ok = True
+                if datum_od:
+                    try:
+                        ok = ok and cur >= date.fromisoformat(datum_od)
+                    except: pass
+                if datum_do:
+                    try:
+                        ok = ok and cur <= date.fromisoformat(datum_do)
+                    except: pass
+                if ok:
+                    dov_dni.append({'datum': cur, 'poznamka': d.poznamka or ''})
+            cur += td(days=1)
+    output = _build_excel(zaznamy, current_user.meno, dovolenkove_dni=dov_dni)
     filename = f'dochadzka_{current_user.meno.replace(" ","_")}_{now_sk().strftime("%Y%m%d")}.xlsx'
     return send_file(output, as_attachment=True, download_name=filename,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -697,6 +719,7 @@ def admin_vykaz(user_id):
 @app.route('/admin/export/<int:user_id>')
 @login_required
 def admin_export(user_id):
+    from datetime import date, timedelta as td
     if not current_user.is_admin:
         flash('Prístup zamietnutý.', 'error')
         return redirect(url_for('dashboard'))
@@ -706,7 +729,27 @@ def admin_export(user_id):
     klient_id = request.args.get('klient_id', '')
     zaznamy   = _filter_zaznamy(user_id, datum_od, datum_do, klient_id)\
                     .order_by(Zaznam.datum.asc(), Zaznam.cas_start.asc()).all()
-    output   = _build_excel(zaznamy, user.meno, include_ziadosti=True)
+    # Dovolenkové dni pre daného zamestnanca
+    pracovne_dni = set(z.datum for z in Zaznam.query.filter_by(user_id=user_id).all())
+    dovolenky_db = Dovolenka.query.filter_by(user_id=user_id).all()
+    dov_dni = []
+    for dov in dovolenky_db:
+        cur = dov.datum_od
+        while cur <= dov.datum_do:
+            if cur not in pracovne_dni:
+                ok = True
+                if datum_od:
+                    try:
+                        ok = ok and cur >= date.fromisoformat(datum_od)
+                    except: pass
+                if datum_do:
+                    try:
+                        ok = ok and cur <= date.fromisoformat(datum_do)
+                    except: pass
+                if ok:
+                    dov_dni.append({'datum': cur, 'poznamka': dov.poznamka or ''})
+            cur += td(days=1)
+    output   = _build_excel(zaznamy, user.meno, include_ziadosti=True, dovolenkove_dni=dov_dni)
     filename = f'dochadzka_{user.meno.replace(" ","_")}_{now_sk().strftime("%Y%m%d")}.xlsx'
     return send_file(output, as_attachment=True, download_name=filename,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -1198,7 +1241,7 @@ def oznacit_hotovo(uloha_id):
 
 # ── EXCEL BUILDER ─────────────────────────────────────────────────────────────
 
-def _build_excel(zaznamy, meno, include_ziadosti=False):
+def _build_excel(zaznamy, meno, include_ziadosti=False, dovolenkove_dni=None):
     # Stĺpce: A=Dátum B=Klient C=Začiatok D=Koniec E=Celkový čas F=Typ G=Činnosť H=Poznámka [I=Žiadosť o zmenu]
     num_cols = 9 if include_ziadosti else 8
     last_col_letter = get_column_letter(num_cols)
@@ -1239,10 +1282,56 @@ def _build_excel(zaznamy, meno, include_ziadosti=False):
         ws.column_dimensions[get_column_letter(ci)].width = w
     ws.row_dimensions[3].height = 24
 
+    # Dovolenkové dni — slovník dátum → poznamka pre rýchle vyhľadanie
+    dov_mapa = {}
+    if dovolenkove_dni:
+        for d in dovolenkove_dni:
+            dov_mapa[d['datum']] = d.get('poznamka', '')
+
+    # Kombinovaný zoznam: záznamy + dovolenkové dni, zoradené podľa dátumu
+    # Typ 'zaznam' alebo 'dovolenka'
+    polozky = []
+    for z in zaznamy:
+        polozky.append(('zaznam', z.datum, z))
+    for d in (dovolenkove_dni or []):
+        polozky.append(('dovolenka', d['datum'], d))
+    polozky.sort(key=lambda x: (x[1], 0 if x[0] == 'zaznam' else 1))
+
     # Zaznamenaj prvý dátový riadok a posledný pre sumárny vzorec
     first_data_row = 4
     row = first_data_row
-    for i, z in enumerate(zaznamy):
+    dov_fill = PatternFill('solid', start_color='FFF3CD')   # svetlo-oranžová
+    dov_font_color = '7D4500'
+
+    for i, (typ, _datum, obj) in enumerate(polozky):
+        # ── DOVOLENKOVÝ RIADOK ──────────────────────────────────────────────
+        if typ == 'dovolenka':
+            fill = PatternFill('solid', start_color='FFE0B2')  # oranžová
+            for ci in range(1, num_cols + 1):
+                c = ws.cell(row=row, column=ci)
+                c.border = thin(); c.fill = fill
+                c.alignment = left; c.font = Font(name='Calibri', size=10, color=dov_font_color)
+            # A: dátum
+            ws.cell(row=row, column=1).value = obj['datum'].strftime('%d.%m.%Y')
+            ws.cell(row=row, column=1).alignment = center
+            # B: prázdny (klient)
+            ws.cell(row=row, column=2).value = ''
+            # C, D: prázdne (časy)
+            # E: prázdne (žiadny vzorec)
+            # F: Typ = 🏖 Dovolenka — tučné
+            c6 = ws.cell(row=row, column=6, value='🏖 Dovolenka')
+            c6.alignment = center
+            c6.fill = PatternFill('solid', start_color='FB8C00')
+            c6.font = Font(name='Calibri', size=10, bold=True, color='FFFFFF')
+            # G: prázdny (činnosť)
+            # H: poznámka k dovolenke
+            ws.cell(row=row, column=8).value = obj.get('poznamka', '') or ''
+            ws.row_dimensions[row].height = 18
+            row += 1
+            continue
+
+        # ── PRACOVNÝ ZÁZNAM ─────────────────────────────────────────────────
+        z = obj
         cinnosti = z.cinnosti if z.cinnosti else [None]
         fill = alt_fill if (i % 2 == 0) else PatternFill('solid', start_color=white)
         # Priprav hodnoty spoločné pre všetky riadky záznamu
