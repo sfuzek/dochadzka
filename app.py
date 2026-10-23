@@ -1203,14 +1203,14 @@ def _build_excel(zaznamy, meno):
         # Priprav hodnoty spoločné pre všetky riadky záznamu
         datum_val  = z.datum.strftime('%d.%m.%Y') if z.datum else ''
         klient_val = z.klient.nazov if z.klient else ''
-        start_val  = z.cas_start.strftime('%H:%M') if z.cas_start else ''
-        stop_val   = z.cas_stop.strftime('%H:%M') if z.cas_stop else ''
-        # Čas ako TIME hodnota pre vzorec (hodiny/minúty)
-        if z.trvanie_sekundy is not None:
-            sek = z.trvanie_sekundy
-            cas_time = sek / 86400  # Excel time fraction
-        else:
-            cas_time = None
+        # C a D ako Excel time fraction (hh:mm:ss) — čas dňa bez dátumu
+        def to_time_frac(dt):
+            if not dt: return None
+            return (dt.hour * 3600 + dt.minute * 60 + dt.second) / 86400
+        start_frac = to_time_frac(z.cas_start)
+        stop_frac  = to_time_frac(z.cas_stop)
+
+        yellow_fill = PatternFill('solid', start_color='FFFF00')
 
         for ji, cin in enumerate(cinnosti):
             for ci in range(1, 9):
@@ -1218,22 +1218,31 @@ def _build_excel(zaznamy, meno):
                 c.border = thin(); c.fill = fill
                 c.alignment = left; c.font = Font(name='Calibri', size=10)
 
-            # Každý riadok — dátum, klient, čas začiatku/konca (opakujú sa pre split riadky)
+            # Každý riadok — dátum, klient, čas začiatku/konca
             ws.cell(row=row, column=1).value = datum_val
             ws.cell(row=row, column=1).alignment = center
             ws.cell(row=row, column=2).value = klient_val
-            ws.cell(row=row, column=3).value = start_val
-            ws.cell(row=row, column=3).alignment = center
-            ws.cell(row=row, column=4).value = stop_val
-            ws.cell(row=row, column=4).alignment = center
 
-            # Celkový čas — iba v prvom riadku záznamu (mergeujeme neskôr)
-            if ji == 0 and cas_time is not None:
+            # Začiatok (C) — čas s sekundami
+            c3 = ws.cell(row=row, column=3)
+            c3.value = start_frac
+            c3.number_format = 'hh:mm:ss'
+            c3.alignment = center
+
+            # Koniec (D) — čas s sekundami
+            c4 = ws.cell(row=row, column=4)
+            c4.value = stop_frac
+            c4.number_format = 'hh:mm:ss'
+            c4.alignment = center
+
+            # Celkový čas (E) — vzorec =D-C per riadok, žlté pozadie
+            if stop_frac is not None and start_frac is not None:
                 c5 = ws.cell(row=row, column=5)
-                c5.value = cas_time
-                c5.number_format = '[h]:mm'
+                c5.value = f'=D{row}-C{row}'
+                c5.number_format = '[h]:mm:ss'
                 c5.alignment = center
                 c5.font = Font(name='Calibri', size=10, bold=True)
+                c5.fill = yellow_fill
 
             # Typ a činnosť
             if cin:
@@ -1259,10 +1268,10 @@ def _build_excel(zaznamy, meno):
     ws.cell(row=row, column=1).font = Font(bold=True, name='Calibri', size=11, color=white)
     ws.cell(row=row, column=1).fill = PatternFill('solid', start_color=navy)
     ws.cell(row=row, column=1).alignment = Alignment(horizontal='right', vertical='center')
-    # SUM vzorec na stĺpec E (Celkový čas), formát [h]:mm
+    # SUM vzorec na stĺpec E (Celkový čas)
     c_sum = ws.cell(row=row, column=5)
     c_sum.value = f'=SUM(E{first_data_row}:E{last_data_row})'
-    c_sum.number_format = '[h]:mm'
+    c_sum.number_format = '[h]:mm:ss'
     c_sum.font = Font(bold=True, name='Calibri', size=12, color=white)
     c_sum.fill = PatternFill('solid', start_color=blue2)
     c_sum.alignment = center
