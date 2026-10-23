@@ -329,8 +329,9 @@ def stop_cas():
     now = now_sk()
 
     # Ak prišiel popis_stop (zastavenie bez predchádzajúcej činnosti)
-    popis_stop = request.form.get('popis_stop', '').strip()
-    typ_stop   = request.form.get('typ', '').strip()
+    popis_stop   = request.form.get('popis_stop', '').strip()
+    typ_stop     = request.form.get('typ', '').strip()
+    poznamka_cin = request.form.get('poznamka_cin', '').strip()
     if popis_stop and typ_stop in ('bezna', 'extra'):
         # Uzavri prípadnú otvorenú činnosť
         posledna = Cinnost.query.filter_by(zaznam_id=zaznam.id, cas_do=None).first()
@@ -338,7 +339,7 @@ def stop_cas():
             posledna.cas_do = now
         # Pridaj novú činnosť
         cinnost = Cinnost(zaznam_id=zaznam.id, popis=popis_stop, typ=typ_stop,
-                          cas_od=zaznam.cas_start, cas_do=now)
+                          poznamka=poznamka_cin, cas_od=zaznam.cas_start, cas_do=now)
         db.session.add(cinnost)
     else:
         # Uzavri poslednú otvorenú činnosť
@@ -367,6 +368,7 @@ def pridat_cinnost():
     if typ not in ('bezna', 'extra'):
         flash('Vyberte typ činnosti (Bežná / Extra).', 'error')
         return redirect(url_for(redirect_to))
+    poznamka_cin = request.form.get('poznamka_cin', '').strip()
     zaznam = Zaznam.query.filter_by(id=int(zaznam_id), user_id=current_user.id).first()
     if not zaznam:
         flash('Záznam nenájdený.', 'error')
@@ -379,6 +381,7 @@ def pridat_cinnost():
         zaznam_id=zaznam.id,
         popis=popis,
         typ=typ,
+        poznamka=poznamka_cin,
         cas_od=now,
         cas_do=now if zaznam.cas_stop is not None else None
     )
@@ -1143,6 +1146,7 @@ def oznacit_hotovo(uloha_id):
 # ── EXCEL BUILDER ─────────────────────────────────────────────────────────────
 
 def _build_excel(zaznamy, meno):
+    # Stĺpce: A=Dátum B=Klient C=Začiatok D=Koniec E=Celkový čas F=Typ G=Činnosť H=Poznámka
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = 'Dochádzka'
@@ -1155,74 +1159,105 @@ def _build_excel(zaznamy, meno):
     thin = lambda: Border(
         left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
         top=Side(style='thin', color='CCCCCC'),  bottom=Side(style='thin', color='CCCCCC'))
-    ws.merge_cells('A1:I1')
+
+    # Nadpis (8 stĺpcov)
+    ws.merge_cells('A1:H1')
     ws['A1'] = f'Výkaz dochádzky — {meno}'
     ws['A1'].font = Font(bold=True, size=15, color=navy, name='Calibri')
     ws['A1'].alignment = center
     ws.row_dimensions[1].height = 32
-    ws.merge_cells('A2:I2')
+    ws.merge_cells('A2:H2')
     ws['A2'] = f'Exportované: {now_sk().strftime("%d.%m.%Y %H:%M")}'
     ws['A2'].font = Font(size=9, color='888888', name='Calibri')
     ws['A2'].alignment = center
     ws.row_dimensions[2].height = 15
-    cols   = ['Dátum','Klient','Začiatok','Koniec','Celkový čas','Typ','Činnosť','Od','Do','Poznámka']
-    widths = [14,22,11,11,13,12,36,11,11,28]
-    for ci,(h,w) in enumerate(zip(cols,widths),1):
-        c=ws.cell(row=3,column=ci,value=h); c.font=hdr_font; c.fill=hdr_fill
-        c.alignment=center; c.border=thin()
-        ws.column_dimensions[get_column_letter(ci)].width=w
-    ws.row_dimensions[3].height=24
-    row=4
-    for i,z in enumerate(zaznamy):
-        cinnosti=z.cinnosti if z.cinnosti else [None]
-        fill=alt_fill if (i%2==0) else PatternFill('solid',start_color=white)
-        for ji,cin in enumerate(cinnosti):
-            for ci in range(1,10):
-                c=ws.cell(row=row,column=ci); c.border=thin(); c.fill=fill
-                c.alignment=left; c.font=Font(name='Calibri',size=10)
-            # Klient sa zapisuje do každého riadku (vrátane rozdelených činností)
-            ws.cell(row=row,column=2).value=z.klient.nazov if z.klient else ''
-            if ji==0:
-                ws.cell(row=row,column=1).value=z.datum.strftime('%d.%m.%Y') if z.datum else ''
-                ws.cell(row=row,column=1).alignment=center
-                ws.cell(row=row,column=3).value=z.cas_start.strftime('%H:%M') if z.cas_start else ''
-                ws.cell(row=row,column=3).alignment=center
-                ws.cell(row=row,column=4).value=z.cas_stop.strftime('%H:%M') if z.cas_stop else ''
-                ws.cell(row=row,column=4).alignment=center
-                ws.cell(row=row,column=5).value=z.trvanie_format
-                ws.cell(row=row,column=5).alignment=center
-                ws.cell(row=row,column=5).font=Font(name='Calibri',size=10,bold=True)
-                ws.cell(row=row,column=10).value=z.poznamka or ''
+
+    cols   = ['Dátum', 'Klient', 'Začiatok', 'Koniec', 'Celkový čas', 'Typ', 'Činnosť', 'Poznámka']
+    widths = [14,       22,       11,          11,        14,            12,    38,          30]
+    for ci, (h, w) in enumerate(zip(cols, widths), 1):
+        c = ws.cell(row=3, column=ci, value=h)
+        c.font = hdr_font; c.fill = hdr_fill
+        c.alignment = center; c.border = thin()
+        ws.column_dimensions[get_column_letter(ci)].width = w
+    ws.row_dimensions[3].height = 24
+
+    # Zaznamenaj prvý dátový riadok a posledný pre sumárny vzorec
+    first_data_row = 4
+    row = first_data_row
+    for i, z in enumerate(zaznamy):
+        cinnosti = z.cinnosti if z.cinnosti else [None]
+        fill = alt_fill if (i % 2 == 0) else PatternFill('solid', start_color=white)
+        # Priprav hodnoty spoločné pre všetky riadky záznamu
+        datum_val  = z.datum.strftime('%d.%m.%Y') if z.datum else ''
+        klient_val = z.klient.nazov if z.klient else ''
+        start_val  = z.cas_start.strftime('%H:%M') if z.cas_start else ''
+        stop_val   = z.cas_stop.strftime('%H:%M') if z.cas_stop else ''
+        # Čas ako TIME hodnota pre vzorec (hodiny/minúty)
+        if z.trvanie_sekundy is not None:
+            sek = z.trvanie_sekundy
+            cas_time = sek / 86400  # Excel time fraction
+        else:
+            cas_time = None
+
+        for ji, cin in enumerate(cinnosti):
+            for ci in range(1, 9):
+                c = ws.cell(row=row, column=ci)
+                c.border = thin(); c.fill = fill
+                c.alignment = left; c.font = Font(name='Calibri', size=10)
+
+            # Každý riadok — dátum, klient, čas začiatku/konca (opakujú sa pre split riadky)
+            ws.cell(row=row, column=1).value = datum_val
+            ws.cell(row=row, column=1).alignment = center
+            ws.cell(row=row, column=2).value = klient_val
+            ws.cell(row=row, column=3).value = start_val
+            ws.cell(row=row, column=3).alignment = center
+            ws.cell(row=row, column=4).value = stop_val
+            ws.cell(row=row, column=4).alignment = center
+
+            # Celkový čas — iba v prvom riadku záznamu (mergeujeme neskôr)
+            if ji == 0 and cas_time is not None:
+                c5 = ws.cell(row=row, column=5)
+                c5.value = cas_time
+                c5.number_format = '[h]:mm'
+                c5.alignment = center
+                c5.font = Font(name='Calibri', size=10, bold=True)
+
+            # Typ a činnosť
             if cin:
-                typ_label = 'Extra' if getattr(cin,'typ','bezna') == 'extra' else 'Bežná'
-                typ_fill_color = 'FEF3C7' if getattr(cin,'typ','bezna') == 'extra' else 'DBEAFE'
-                typ_font_color = '92400E' if getattr(cin,'typ','bezna') == 'extra' else '1E40AF'
-                c6=ws.cell(row=row,column=6,value=typ_label)
-                c6.alignment=center
-                c6.fill=PatternFill('solid',start_color=typ_fill_color)
-                c6.font=Font(name='Calibri',size=10,bold=True,color=typ_font_color)
-                ws.cell(row=row,column=7).value=cin.popis
-                ws.cell(row=row,column=8).value=cin.cas_od.strftime('%H:%M') if cin.cas_od else ''
-                ws.cell(row=row,column=8).alignment=center
-                ws.cell(row=row,column=9).value=cin.cas_do.strftime('%H:%M') if cin.cas_do else ''
-                ws.cell(row=row,column=9).alignment=center
-            ws.row_dimensions[row].height=18; row+=1
-    row+=1
-    celk_sek=sum(z.trvanie_sekundy or 0 for z in zaznamy)
-    celk_str=f'{celk_sek//3600:02d}:{(celk_sek%3600)//60:02d}'
+                typ_label = 'Extra' if getattr(cin, 'typ', 'bezna') == 'extra' else 'Bežná'
+                typ_fill_color = 'FEF3C7' if getattr(cin, 'typ', 'bezna') == 'extra' else 'DBEAFE'
+                typ_font_color = '92400E' if getattr(cin, 'typ', 'bezna') == 'extra' else '1E40AF'
+                c6 = ws.cell(row=row, column=6, value=typ_label)
+                c6.alignment = center
+                c6.fill = PatternFill('solid', start_color=typ_fill_color)
+                c6.font = Font(name='Calibri', size=10, bold=True, color=typ_font_color)
+                ws.cell(row=row, column=7).value = cin.popis
+                # Poznámka k činnosti (stĺpec H)
+                ws.cell(row=row, column=8).value = getattr(cin, 'poznamka', '') or ''
+            ws.row_dimensions[row].height = 18
+            row += 1
+
+    last_data_row = row - 1
+
+    # Sumárny riadok — celkový čas ako SUM vzorec (stĺpec E = col 5)
+    row += 1
     ws.merge_cells(f'A{row}:D{row}')
-    ws.cell(row=row,column=1).value='CELKOVÝ ČAS:'
-    ws.cell(row=row,column=1).font=Font(bold=True,name='Calibri',size=11,color=white)
-    ws.cell(row=row,column=1).fill=PatternFill('solid',start_color=navy)
-    ws.cell(row=row,column=1).alignment=Alignment(horizontal='right',vertical='center')
-    ws.cell(row=row,column=5).value=celk_str
-    ws.cell(row=row,column=5).font=Font(bold=True,name='Calibri',size=12,color=white)
-    ws.cell(row=row,column=5).fill=PatternFill('solid',start_color=blue2)
-    ws.cell(row=row,column=5).alignment=center
-    ws.merge_cells(f'F{row}:J{row}')
-    ws.row_dimensions[row].height=24
-    ws.freeze_panes='A4'
-    output=io.BytesIO(); wb.save(output); output.seek(0)
+    ws.cell(row=row, column=1).value = 'CELKOVÝ ČAS:'
+    ws.cell(row=row, column=1).font = Font(bold=True, name='Calibri', size=11, color=white)
+    ws.cell(row=row, column=1).fill = PatternFill('solid', start_color=navy)
+    ws.cell(row=row, column=1).alignment = Alignment(horizontal='right', vertical='center')
+    # SUM vzorec na stĺpec E (Celkový čas), formát [h]:mm
+    c_sum = ws.cell(row=row, column=5)
+    c_sum.value = f'=SUM(E{first_data_row}:E{last_data_row})'
+    c_sum.number_format = '[h]:mm'
+    c_sum.font = Font(bold=True, name='Calibri', size=12, color=white)
+    c_sum.fill = PatternFill('solid', start_color=blue2)
+    c_sum.alignment = center
+    c_sum.border = thin()
+    ws.merge_cells(f'F{row}:H{row}')
+    ws.row_dimensions[row].height = 24
+    ws.freeze_panes = 'A4'
+    output = io.BytesIO(); wb.save(output); output.seek(0)
     return output
 
 

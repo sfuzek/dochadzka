@@ -82,6 +82,7 @@
         <input type="hidden" name="redirect" value="dashboard">
         <input type="hidden" name="popis" id="hiddenPopis1">
         <input type="hidden" name="typ" id="hiddenTyp1">
+        <input type="hidden" name="poznamka_cin" id="hiddenPozn1">
         <button type="submit" class="btn"
                 style="background:rgba(255,255,255,0.2);color:#fff;border:1.5px solid rgba(255,255,255,0.4)">
           ✂ Rozdeliť
@@ -93,12 +94,21 @@
         <input type="hidden" name="zaznam_id" value="{{ aktivny.id }}">
         <input type="hidden" name="popis_stop" id="hiddenPopis2">
         <input type="hidden" name="typ" id="hiddenTyp2">
+        <input type="hidden" name="poznamka_cin" id="hiddenPozn2">
         <button type="submit" class="btn btn-danger btn-lg">⏹ Zastaviť prácu</button>
       </form>
       <button type="button" class="btn" onclick="toggleZmenitKlienta()"
               style="background:rgba(255,255,255,0.15);color:#fff;border:1.5px solid rgba(255,255,255,0.3)">
         🔄 Zmeniť klienta
       </button>
+    </div>
+    <!-- Poznámka k činnosti -->
+    <div style="margin-top:8px">
+      <input type="text" id="poznamkaCinnosti" placeholder="Poznámka k činnosti (nepovinné)"
+             style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.10);
+                    border:1.5px solid rgba(255,255,255,0.2);border-radius:8px;
+                    padding:8px 13px;color:#fff;font-size:12px;font-family:inherit;
+                    opacity:.85;">
     </div>
     <div id="chybaCinnosti" style="display:none;color:#FCA5A5;font-size:12px;margin-top:6px;">
       ⚠ Vyplňte popis činnosti a vyberte typ (Bežná / Extra).
@@ -139,11 +149,11 @@
                placeholder="Popis čo ste robili pre {{ aktivny.klient.nazov }} (povinné)"
                style="flex:2;min-width:180px;background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);color:#fff;font-size:13px;">
         <select name="novy_klient_id" id="novyKlient"
-                style="flex:1;min-width:140px;background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);color:#fff;font-size:13px;">
-          <option value="">— Prepnúť na klienta —</option>
+                style="flex:1;min-width:140px;background:#1e2533;border:1.5px solid rgba(255,255,255,0.25);color:#e2e8f0;font-size:13px;border-radius:8px;padding:8px 10px;">
+          <option value="" style="background:#1e2533;color:#e2e8f0">— Prepnúť na klienta —</option>
           {% for k in klienti %}
           {% if k.id != aktivny.klient_id %}
-          <option value="{{ k.id }}">{{ k.nazov }}</option>
+          <option value="{{ k.id }}" style="background:#1e2533;color:#e2e8f0">{{ k.nazov }}</option>
           {% endif %}
           {% endfor %}
         </select>
@@ -368,11 +378,12 @@ function vyberPredCinnost(id, nazov, typ) {
   event.currentTarget.style.background  = typ === 'extra' ? 'rgba(251,191,36,0.2)' : 'rgba(96,165,250,0.2)';
 }
 
-// Skopíruje popis+typ zo spoločných polí do hidden inputov pred odoslaním
+// Skopíruje popis+typ+poznámku zo spoločných polí do hidden inputov pred odoslaním
 function prenesDoFormu(form, akcia) {
-  const popis = document.getElementById('popisCinnosti').value.trim();
-  const typEl = document.querySelector('[name="typ_cinnost"]:checked');
-  const chyba = document.getElementById('chybaCinnosti');
+  const popis   = document.getElementById('popisCinnosti').value.trim();
+  const poznamka = document.getElementById('poznamkaCinnosti').value.trim();
+  const typEl   = document.querySelector('[name="typ_cinnost"]:checked');
+  const chyba   = document.getElementById('chybaCinnosti');
 
   if (!popis || !typEl) {
     chyba.style.display = 'block';
@@ -391,9 +402,11 @@ function prenesDoFormu(form, akcia) {
   if (akcia === 'rozdelit') {
     document.getElementById('hiddenPopis1').value = popis;
     document.getElementById('hiddenTyp1').value   = typEl.value;
+    document.getElementById('hiddenPozn1').value  = poznamka;
   } else {
     document.getElementById('hiddenPopis2').value = popis;
     document.getElementById('hiddenTyp2').value   = typEl.value;
+    document.getElementById('hiddenPozn2').value  = poznamka;
   }
   return true;
 }
